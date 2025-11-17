@@ -205,7 +205,7 @@ After extensive testing, the optimal configuration was determined:
 
 #### OCR Engine Comparison: EasyOCR vs Tesseract
 
-After implementing CRAFT for text detection, we compared two OCR engines for text recognition:
+After implementing CRAFT for text detection, two OCR engines were compared for text recognition:
 
 **Final Configuration**:
 - CRAFT detection: text_threshold=0.3, link_threshold=0.15, low_text=0.2
@@ -349,7 +349,7 @@ After implementing CRAFT for text detection, we compared two OCR engines for tex
 
 **Preprocessing Techniques Tested**:
 
-We tested 14 different preprocessing techniques on the chart images. Results shown below in a 3×5 grid for easy comparison:
+Fourteen different preprocessing techniques were tested on the chart images. Results shown below in a 3×5 grid for easy comparison:
 
 <table>
 <tr>
@@ -381,7 +381,7 @@ We tested 14 different preprocessing techniques on the chart images. Results sho
 
 **Selected Preprocessing Methods**:
 
-After extensive testing, we selected **three methods** for ensemble classification (see Phase 7):
+After extensive testing, **three methods** were selected for ensemble classification (see Phase 7):
 
 1. **Adaptive Threshold**:
    - Creates sharp boundaries between bars and background
@@ -417,7 +417,7 @@ After extensive testing, we selected **three methods** for ensemble classificati
 
 **Selected Methods**:
 
-After analyzing the preprocessing results, we selected **three methods** for ensemble classification:
+After analyzing the preprocessing results, **three methods** were selected for ensemble classification:
 
 1. **Adaptive Threshold**:
    - Creates sharp boundaries between bars and background

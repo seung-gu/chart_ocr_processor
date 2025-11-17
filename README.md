@@ -10,7 +10,7 @@ This project processes chart images containing S&P 500 quarterly EPS data and ex
 
 Financial data providers (FactSet, Bloomberg, Investing.com, etc.) typically offer historical EPS data as **actual values**—once a quarter's earnings are reported, the estimate is overwritten with the actual figure. This creates a challenge for backtesting predictive models: using historical data means testing against information that was already reflected in stock prices at the time, making it difficult to evaluate the true predictive power of EPS estimates.
 
-To address this, this project extracts **point-in-time EPS estimates** from historical FactSet Earnings Insight reports. By preserving the estimates as they appeared at each report date (before actual earnings were announced), we can build a dataset that accurately reflects what was known and expected at each point in time, enabling more meaningful backtesting and predictive analysis.
+To address this, this project extracts **point-in-time EPS estimates** from historical FactSet Earnings Insight reports. By preserving the estimates as they appeared at each report date (before actual earnings were announced), a dataset can be built that accurately reflects what was known and expected at each point in time, enabling more meaningful backtesting and predictive analysis.
 
 ## Project Structure
 
@@ -188,7 +188,7 @@ The image preprocessing pipeline is designed to classify bar graphs as either **
 
 ### Three-Method Ensemble Classification
 
-After testing 14 different preprocessing techniques, we selected **three methods** that work together in an ensemble approach:
+After testing 14 different preprocessing techniques, **three methods** were selected that work together in an ensemble approach:
 
 1. **Adaptive Threshold** (Threshold: 0.7):
    - Creates sharp boundaries between bars and background
