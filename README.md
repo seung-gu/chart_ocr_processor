@@ -125,7 +125,7 @@ Target: 385 PDFs all
 
 **Example extracted chart image**:
 
-![Extracted EPS Chart](output/estimates/20161209.png)
+![Extracted EPS Chart](output/preprocessing_test/20161209.png)
 
 The extracted PNG images contain the quarterly EPS chart with:
 - Quarter labels (Q1'14, Q2'14, etc.) at the bottom
