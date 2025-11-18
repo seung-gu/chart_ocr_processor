@@ -31,8 +31,10 @@ jobs:
       
       - name: Configure Google Cloud credentials
         run: |
-          echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}" > gen-lang-client-0316337343-f310859556ae.json
+          python3 -c "import os; open('gen-lang-client-0316337343-f310859556ae.json', 'w').write(os.environ['GOOGLE_APPLICATION_CREDENTIALS_JSON'])"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$PWD/gen-lang-client-0316337343-f310859556ae.json" >> $GITHUB_ENV
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
       
       - name: Configure Cloudflare R2 credentials
         run: |
