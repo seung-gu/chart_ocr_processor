@@ -17,24 +17,30 @@ To address this, this project extracts **point-in-time EPS estimates** from hist
 ```
 factset-data-collector/
 ├── src/
-│   └── chart_ocr_processor/
-│       ├── __init__.py
-│       ├── bar_classifier.py      # Bar graph classification
-│       ├── coordinate_matcher.py  # Coordinate-based matching
-│       ├── google_vision_processor.py  # Google Cloud Vision OCR
-│       ├── parser.py              # Quarter and EPS parsing logic
-│       └── processor.py           # Main processing pipeline
+│   ├── chart_ocr_processor/      # Image processing and OCR
+│   │   ├── __init__.py
+│   │   ├── bar_classifier.py      # Bar graph classification
+│   │   ├── coordinate_matcher.py  # Coordinate-based matching
+│   │   ├── google_vision_processor.py  # Google Cloud Vision OCR
+│   │   ├── parser.py              # Quarter and EPS parsing logic
+│   │   └── processor.py           # Main processing pipeline (local only)
+│   └── service/                   # Cloud storage and utilities
+│       ├── cloudflare.py          # Cloudflare R2 storage integration
+│       └── csv_storage.py         # CSV storage abstraction (cloud/local)
+├── actions/
+│   └── workflow.py                # Complete automated workflow (CI/CD)
 ├── scripts/
 │   ├── data_collection/          # Data collection scripts
 │   │   ├── download_factset_pdfs.py  # Download PDFs from FactSet
 │   │   └── extract_eps_charts.py    # Extract charts from PDFs
 │   ├── testing/                   # Test scripts
 │   └── visualization/            # Visualization scripts
-├── output/
-│   ├── estimates/                 # Input PNG images
+├── output/                        # Local output directory
+│   ├── estimates/                 # Extracted PNG images
 │   ├── factset_pdfs/              # Downloaded PDF files
-│   └── preprocessing_test/        # Preprocessing visualization results
-├── main.py                         # Main entry point
+│   ├── extracted_estimates.csv    # Main data CSV
+│   └── extracted_estimates_confidence.csv  # Confidence data CSV
+├── main.py                         # Main entry point (image processing only, local)
 └── pyproject.toml                  # Project configuration
 ```
 
@@ -57,6 +63,11 @@ uv sync
   - Set `GOOGLE_APPLICATION_CREDENTIALS` environment variable to point to the key file
   - See [Google Cloud Vision API documentation](https://cloud.google.com/vision/docs/setup) for details
 
+- **Cloudflare R2 (Optional, for CI/CD)**: Cloud storage for automated workflows
+  - Required only for GitHub Actions workflows
+  - Local execution uses local file storage only
+  - Install with: `uv sync --extra r2`
+
 ## Usage
 
 ### Data Collection
@@ -75,9 +86,11 @@ uv run python scripts/data_collection/download_factset_pdfs.py
 - Searches FactSet's public URL: `https://advantage.factset.com/hubfs/Website/Resources%20Section/Research%20Desk/Earnings%20Insight/`
 - Tries multiple date formats (MMDDYY, MMDDYYYY) for each date
 - Downloads PDFs in reverse chronological order (newest first)
-- Saves PDFs to `output/factset_pdfs/` directory
+- Saves PDFs to `output/factset_pdfs/` directory (local)
+- In CI environments: Also uploads to Cloudflare R2 at `reports/` path
 - Creates an index file `output/factset_pdfs_index.json` with download metadata
 - Includes rate limiting (0.05 seconds between requests) to be respectful
+- **Incremental updates**: If CSV exists, only downloads PDFs after the last processed date
 
 **Example output**:
 ```
@@ -109,7 +122,10 @@ uv run python scripts/data_collection/extract_eps_charts.py
   - "Bottom-Up EPS: Current & Historical"
 - If keyword is found at the bottom of a page, extracts the next page (chart is typically on the following page)
 - Converts the target page to PNG at 300 DPI resolution
-- Saves PNG files to `output/estimates/` with naming format: `YYYYMMDD.png`
+- Saves PNG files to `output/estimates/` with naming format: `YYYYMMDD.png` (local)
+- In CI environments: Also uploads to Cloudflare R2 at `estimates/` path
+- **Incremental updates**: Skips PNGs that already exist locally or in cloud
+- **Date filtering**: If CSV exists, only processes PDFs after the last processed date
 
 **Example output**:
 ```
@@ -135,6 +151,10 @@ The extracted PNG images contain the quarterly EPS chart with:
 
 ### Basic Usage
 
+#### Option 1: Image Processing Only (main.py)
+
+Process already extracted PNG images:
+
 ```bash
 # Process all images in output/estimates directory
 uv run python main.py
@@ -146,28 +166,108 @@ uv run python main.py --input-dir output/estimates --output output/results.csv
 uv run python main.py --limit 5
 ```
 
-### Command Line Options
-
+**Command Line Options:**
 - `--input-dir`: Directory containing PNG images (default: `output/estimates`)
 - `--output`: Output CSV file path (default: `output/extracted_estimates.csv`)
 - `--limit`: Maximum number of images to process (for testing)
+- `--no-coordinate-matching`: Disable coordinate-based matching
+- `--no-bar-classification`: Disable bar graph classification
+- `--single-method`: Use single method only (instead of ensemble)
 
-For more details on scripts, see [scripts/README.md](scripts/README.md).
+#### Option 2: Complete Workflow (actions/workflow.py)
+
+Run the complete automated pipeline (download PDFs → extract PNGs → process images):
+
+```bash
+# Run complete workflow
+uv run python actions/workflow.py
+```
+
+**Execution Modes:**
+
+- **Local Execution** (`main.py`):
+  - Uses local file storage only (`output/` directory)
+  - Cloud storage is **disabled** (even if R2 credentials are provided)
+  - Suitable for development and testing
+  - Requires PDFs and PNGs to be downloaded/extracted first
+
+- **CI/CD Execution** (`actions/workflow.py`):
+  - Automatically enables cloud storage when `CI=true` (GitHub Actions)
+  - Reads/writes CSV files from/to Cloudflare R2
+  - Uploads PDFs to `reports/` and PNGs to `estimates/` in R2 bucket
+  - CSV files stored at bucket root (`extracted_estimates.csv`, `extracted_estimates_confidence.csv`)
+  - Falls back to local storage if cloud operations fail
+
+See [scripts/data_collection/README.md](scripts/data_collection/README.md) for detailed workflow documentation.
+
+#### GitHub Actions Setup
+
+To run the workflow automatically on GitHub Actions:
+
+1. **Create GitHub Secrets** (Settings → Secrets and variables → Actions):
+   - `GOOGLE_APPLICATION_CREDENTIALS_JSON`: Google Cloud service account JSON key file content
+   - `R2_BUCKET_NAME`: Cloudflare R2 bucket name (e.g., `factset-data`)
+   - `R2_ACCOUNT_ID`: Cloudflare R2 account ID
+   - `R2_ACCESS_KEY_ID`: Cloudflare R2 access key ID
+   - `R2_SECRET_ACCESS_KEY`: Cloudflare R2 secret access key
+
+2. **Workflow file**: `.github/workflows/data-collection.yml` is already configured
+   - Runs weekly on Monday at 00:00 UTC (09:00 KST)
+   - Can also be triggered manually via "Run workflow" button
+
+3. **Workflow execution**:
+   - Automatically downloads new PDFs from FactSet (incremental: only new PDFs)
+   - Extracts EPS chart pages as PNGs (skips existing files)
+   - Processes images and updates CSV files (skips already processed dates)
+   - Uploads all files to Cloudflare R2:
+     - PDFs → `reports/` folder in R2 bucket
+     - PNGs → `estimates/` folder in R2 bucket
+     - CSV files → Bucket root
+   - Saves CSV results as GitHub Actions artifacts (30-day retention)
+
+4. **Cloud Storage Structure** (R2 Bucket):
+   ```
+   factset-data (bucket)
+   ├── extracted_estimates.csv
+   ├── extracted_estimates_confidence.csv
+   ├── estimates/
+   │   └── YYYYMMDD.png
+   └── reports/
+       └── EarningsInsight_YYYYMMDD_*.pdf
+   ```
 
 ## Output Format
 
-The extracted data is saved as CSV in wide format with the following structure:
+The extracted data is saved as **two separate CSV files**:
 
+### Main Data (`extracted_estimates.csv`)
+
+Wide format with the following structure:
 - `Report_Date`: Date extracted from filename (YYYY-MM-DD format)
 - Quarter columns: `Q1'14`, `Q2'14`, `Q3'14`, etc. (sorted chronologically)
-- `Confidence`: Overall confidence score (0-100%) combining bar classification confidence and consistency with previous week's data
 - Estimated values are marked with `*` suffix
 
 Example:
 ```csv
-Report_Date,Q1'14,Q2'14,Q3'14,Q4'14,Q1'15,...,Q1'17,Q2'17,Confidence
-2016-12-09,27.85,29.67,29.96,30.33,28.43,...,30.61*,32.64*,100.0
+Report_Date,Q1'14,Q2'14,Q3'14,Q4'14,Q1'15,...,Q1'17,Q2'17
+2016-12-09,27.85,29.67,29.96,30.33,28.43,...,30.61*,32.64*
 ```
+
+### Confidence Data (`extracted_estimates_confidence.csv`)
+
+Separate file containing confidence scores:
+- `Report_Date`: Date extracted from filename
+- `Confidence`: Overall confidence score (0-100%) combining bar classification confidence and consistency with previous week's data
+
+Example:
+```csv
+Report_Date,Confidence
+2016-12-09,100.0
+```
+
+**Storage Locations:**
+- **Local**: `output/extracted_estimates.csv`, `output/extracted_estimates_confidence.csv`
+- **Cloud (CI)**: Bucket root (`extracted_estimates.csv`, `extracted_estimates_confidence.csv`)
 
 **Visualization of extraction result**:
 
@@ -226,11 +326,43 @@ After testing 14 different preprocessing techniques, **three methods** were sele
 
 This preprocessing pipeline ensures accurate distinction between actual and estimated EPS values, which is critical for data quality.
 
+## Architecture & Storage
+
+### Local vs CI/CD Execution
+
+**Local Execution:**
+- All files stored in `output/` directory
+- Cloud storage explicitly disabled
+- Use `main.py` for image processing only
+- Use individual scripts (`download_factset_pdfs.py`, `extract_eps_charts.py`) for data collection
+
+**CI/CD Execution (GitHub Actions):**
+- Cloud storage automatically enabled when `CI=true`
+- Files stored in Cloudflare R2 bucket
+- Use `actions/workflow.py` for complete automated pipeline
+- CSV files read/written from/to cloud storage
+- Incremental updates: Only processes new data based on existing CSV
+
+### Cloud Storage Integration
+
+- **Provider**: Cloudflare R2 (S3-compatible)
+- **Storage Abstraction**: `src/service/csv_storage.py` handles cloud/local switching
+- **File Upload**: `src/service/cloudflare.py` provides upload/download functions
+- **Automatic Detection**: Cloud storage enabled only in CI environments or when explicitly enabled
+
 ## Development History
 
 For detailed development history, see [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md).
 
 **Brief Summary**: Started with cloud APIs (OpenAI, Gemini) → Local Tesseract OCR → CRAFT model → **Final: Google Cloud Vision API** with coordinate-based matching and three-method ensemble bar graph classification.
+
+**Recent Updates**:
+- Added Cloudflare R2 cloud storage integration for CI/CD workflows
+- Separated confidence data into separate CSV file (`extracted_estimates_confidence.csv`)
+- Implemented incremental update logic (skip already processed data)
+- Created automated workflow (`actions/workflow.py`) for CI/CD environments
+- Added storage abstraction layer (`src/service/`) for hybrid cloud/local execution
+- Removed `R2_BASE_PATH` configuration (files stored at bucket root and folders)
 
 
 

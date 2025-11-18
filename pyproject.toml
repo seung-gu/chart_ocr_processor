@@ -18,6 +18,9 @@ dependencies = [
     "torchvision>=0.24.1",
 ]
 
+[project.optional-dependencies]
+r2 = ["boto3>=1.28.0"]
+
 [project.scripts]
 factset-data-collector = "main:main"
 

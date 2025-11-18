@@ -116,40 +116,82 @@ def process_directory(
     Returns:
         DataFrame containing extracted data
     """
-    image_files = sorted(directory.glob('*.png'))
+    # Load existing CSV to check processed dates (local only)
+    existing_df = None
+    processed_dates = set()
+    if output_csv and output_csv.exists():
+        try:
+            existing_df = pd.read_csv(output_csv)
+            existing_df = existing_df.drop(columns=['Confidence'], errors='ignore')
+            if not existing_df.empty:
+                existing_df['Report_Date'] = pd.to_datetime(existing_df['Report_Date'])
+                processed_dates = set(existing_df['Report_Date'].dt.strftime('%Y%m%d'))
+                logger.info(f"Found existing CSV with {len(existing_df)} records")
+        except Exception as e:
+            logger.warning(f"Could not read existing CSV: {e}")
+    
+    # Filter images: only process new ones
+    image_files = [img for img in sorted(directory.glob('*.png')) if img.stem not in processed_dates]
+    
     if limit:
         image_files = image_files[:limit]
-        logger.info(f"Processing {len(image_files)} image files. (Limit: {limit})")
-    else:
-        logger.info(f"Processing {len(image_files)} image files.")
+    if not image_files:
+        if not existing_df and not list(directory.glob('*.png')):
+            print(f"\n⚠️  No PNG images found in {directory}")
+            print(f"   Please run 'uv run python scripts/data_collection/extract_eps_charts.py' first to extract PNGs from PDFs.")
+        return existing_df if existing_df is not None else pd.DataFrame(columns=['Report_Date'])
     
-    all_results = []
+    total_images = len(image_files)
+    print(f"\n🔄 Processing {total_images} new images...")
+    logger.info(f"Processing {total_images} new images")
+    
+    current_df = existing_df.copy() if existing_df is not None and not existing_df.empty else pd.DataFrame()
+    confidence_csv = output_csv.parent / f"{output_csv.stem}_confidence.csv" if output_csv else None
     
     for idx, image_path in enumerate(image_files, 1):
-        logger.info(f"Processing ({idx}/{len(image_files)}): {image_path.name}")
-        results = process_image(
-            image_path,
-            use_coordinate_matching=use_coordinate_matching,
-            classify_bars=classify_bars,
-            use_multiple_methods=use_multiple_methods
-        )
-        all_results.extend(results)
+        print(f"[{idx}/{total_images}] {image_path.name}", end=" ... ")
+        
+        try:
+            results = process_image(image_path, use_coordinate_matching, classify_bars, use_multiple_methods)
+            if not results:
+                print("⚠️  No data")
+                continue
+            
+            df_wide = convert_to_wide_format(pd.DataFrame(results))
+            df_confidence = calculate_confidence_dataframe(df_wide, pd.DataFrame(results))
+            
+            # Merge
+            if current_df.empty:
+                current_df = df_wide
+            else:
+                df_wide['Report_Date'] = pd.to_datetime(df_wide['Report_Date'])
+                current_df['Report_Date'] = pd.to_datetime(current_df['Report_Date'])
+                current_df = pd.concat([current_df, df_wide], ignore_index=True).drop_duplicates(subset=['Report_Date'], keep='last').sort_values('Report_Date').reset_index(drop=True)
+                quarter_cols = sorted([c for c in current_df.columns if c != 'Report_Date'], key=_parse_quarter_for_sort)
+                current_df = current_df[['Report_Date'] + quarter_cols]
+            
+            # Save (local only)
+            if output_csv:
+                current_df['Report_Date'] = pd.to_datetime(current_df['Report_Date'])
+                df_to_save = current_df.copy().assign(Report_Date=lambda x: x['Report_Date'].dt.strftime('%Y-%m-%d'))
+                df_to_save.to_csv(output_csv, index=False)
+                
+                # Confidence CSV: append mode
+                df_confidence.to_csv(confidence_csv, mode='a' if confidence_csv.exists() else 'w', 
+                                    header=not confidence_csv.exists(), index=False)
+                print(f"✅ {len(current_df)} records")
+                
+        except Exception as e:
+            print(f"❌ {e}")
+            logger.error(f"Error processing {image_path}: {e}")
     
-    # Create DataFrame
-    if all_results:
-        df = pd.DataFrame(all_results)
-        
-        # Convert to wide format (with confidence)
-        df_wide = convert_to_wide_format(df)
-        
-        if output_csv:
-            df_wide.to_csv(output_csv, index=False)
-            logger.info(f"Results saved to {output_csv}.")
-        
-        return df_wide
+    print(f"\n📊 Complete: {len(current_df)} total records\n")
     
-    logger.warning("No data extracted.")
-    return pd.DataFrame(columns=['Report_Date'])
+    if current_df.empty:
+        return existing_df if existing_df is not None else pd.DataFrame(columns=['Report_Date'])
+    
+    current_df['Report_Date'] = pd.to_datetime(current_df['Report_Date']).dt.strftime('%Y-%m-%d')
+    return current_df
 
 
 def convert_to_wide_format(df: pd.DataFrame) -> pd.DataFrame:
@@ -202,26 +244,22 @@ def convert_to_wide_format(df: pd.DataFrame) -> pd.DataFrame:
     # Convert empty values to empty strings (display as empty cells in CSV)
     df_pivot = df_pivot.fillna('')
     
-    # Calculate and add Confidence
-    df_pivot = add_confidence_column(df_pivot, df)
-    
     return df_pivot
 
 
-def add_confidence_column(df_wide: pd.DataFrame, df_long: pd.DataFrame) -> pd.DataFrame:
-    """Add Confidence column to wide format DataFrame.
+def calculate_confidence_dataframe(df_wide: pd.DataFrame, df_long: pd.DataFrame) -> pd.DataFrame:
+    """Calculate confidence and return as separate DataFrame.
     
     Args:
-        df_wide: Wide format DataFrame
+        df_wide: Wide format DataFrame (Report_Date, Quarter columns)
         df_long: Long format DataFrame (original data, includes bar_confidence, bar_color)
         
     Returns:
-        DataFrame with Confidence column added
+        DataFrame with Report_Date and Confidence columns
     """
-    df_wide = df_wide.copy()
-    
     # Calculate confidence for each report_date
     confidences = []
+    report_dates = []
     
     # Sort dates to identify first data point
     sorted_dates = sorted(df_wide['Report_Date'].unique())
@@ -233,6 +271,7 @@ def add_confidence_column(df_wide: pd.DataFrame, df_long: pd.DataFrame) -> pd.Da
         
         if date_data.empty:
             confidences.append(0.0)
+            report_dates.append(report_date)
             continue
         
         # 1. Calculate bar confidence score (3/3 match = 100%, 2/3 = 67%, 1/3 = 33%)
@@ -268,18 +307,15 @@ def add_confidence_column(df_wide: pd.DataFrame, df_long: pd.DataFrame) -> pd.Da
         final_confidence = (bar_score * 0.5) + (consistency_score * 0.5)
         
         confidences.append(round(final_confidence, 1))
+        report_dates.append(report_date)
     
-    df_wide['Confidence'] = confidences
+    # Create DataFrame with Report_Date and Confidence
+    df_confidence = pd.DataFrame({
+        'Report_Date': report_dates,
+        'Confidence': confidences
+    })
     
-    # Column order: Report_Date, Q1'14, Q2'14, ..., Q4'26, Confidence
-    # Sort quarter columns first, then add Confidence at the end
-    quarter_columns = sorted(
-        [col for col in df_wide.columns if col not in ['Report_Date', 'Confidence']],
-        key=lambda x: _parse_quarter_for_sort(x)
-    )
-    df_wide = df_wide[['Report_Date'] + quarter_columns + ['Confidence']]
-    
-    return df_wide
+    return df_confidence
 
 
 def calculate_consistency_with_previous_week(

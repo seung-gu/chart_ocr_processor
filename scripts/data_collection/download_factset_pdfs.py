@@ -10,12 +10,18 @@ import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import pandas as pd
+
+from src.service.cloudflare import upload_to_cloud
+from src.service.csv_storage import get_last_date_from_csv as get_last_date_from_csv_storage
+
 # Project root based paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 BASE_URL = "https://advantage.factset.com/hubfs/Website/Resources%20Section/Research%20Desk/Earnings%20Insight/"
 
 OUTPUT_DIR = PROJECT_ROOT / "output" / "factset_pdfs"
 INDEX_FILE = PROJECT_ROOT / "output" / "factset_pdfs_index.json"
+CSV_FILE = PROJECT_ROOT / "output" / "extracted_estimates.csv"
 
 
 def download_factset_pdfs(
@@ -71,9 +77,14 @@ def download_factset_pdfs(
                         # Filename
                         filename = OUTPUT_DIR / f"EarningsInsight_{current.strftime('%Y%m%d')}_{fmt}.pdf"
                         
-                        # Save
+                        # Save locally
                         with open(filename, 'wb') as f:
                             f.write(content)
+                        
+                        # Upload to cloud
+                        cloud_path = f"reports/{filename.name}"
+                        if upload_to_cloud(filename, cloud_path):
+                            print(f"   ☁️  Uploaded to R2: {cloud_path}")
                         
                         found_pdfs.append({
                             'date': current.strftime("%Y-%m-%d"),
@@ -102,6 +113,8 @@ def download_factset_pdfs(
         time.sleep(rate_limit)
     
     return found_pdfs, test_count
+
+
 
 
 def save_index(found_pdfs: list[dict]) -> None:
@@ -134,7 +147,19 @@ def save_index(found_pdfs: list[dict]) -> None:
 
 def main() -> None:
     """Main function"""
-    found_pdfs, test_count = download_factset_pdfs()
+    # Get start date from CSV file (last date + 1 day)
+    last_date = get_last_date_from_csv_storage(None, CSV_FILE)
+    if last_date:
+        start_date = last_date + timedelta(days=1)
+        print(f"📅 Found existing CSV file")
+        print(f"   Last report date: {last_date.strftime('%Y-%m-%d')}")
+        print(f"   Starting download from: {start_date.strftime('%Y-%m-%d')}")
+    else:
+        start_date = None  # Will default to 2000-01-01
+        print(f"📅 No existing CSV file found, starting from 2000-01-01")
+    
+    print()
+    found_pdfs, test_count = download_factset_pdfs(start_date=start_date)
     
     print("\n" + "=" * 80)
     print(f"📊 Final Results")

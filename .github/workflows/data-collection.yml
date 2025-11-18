@@ -1,0 +1,56 @@
+name: FactSet Data Collection
+
+on:
+  schedule:
+    # Run weekly on Monday at 00:00 UTC (09:00 KST)
+    - cron: '0 0 * * 1'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  collect-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Install dependencies
+        run: uv sync --extra r2
+      
+      - name: Configure Google Cloud credentials
+        run: |
+          echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}" > gen-lang-client-0316337343-f310859556ae.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$PWD/gen-lang-client-0316337343-f310859556ae.json" >> $GITHUB_ENV
+      
+      - name: Configure Cloudflare R2 credentials
+        run: |
+          echo "R2_BUCKET_NAME=${{ secrets.R2_BUCKET_NAME }}" >> $GITHUB_ENV
+          echo "R2_ACCOUNT_ID=${{ secrets.R2_ACCOUNT_ID }}" >> $GITHUB_ENV
+          echo "R2_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+          echo "R2_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "CI=true" >> $GITHUB_ENV
+      
+      - name: Run data collection workflow
+        run: uv run python actions/workflow.py
+      
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extracted-data
+          path: |
+            output/extracted_estimates.csv
+            output/extracted_estimates_confidence.csv
+          retention-days: 30
+        continue-on-error: true
+
