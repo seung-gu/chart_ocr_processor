@@ -25,6 +25,10 @@ gen-lang-client-*.json
 output/factset_pdfs/
 output/factset_pdfs_index.json
 
+# 추출된 추정치 데이터 파일들
+output/extracted_estimates.csv
+output/extracted_estimates_confidence.csv
+
 # 추출된 이미지 파일들 (크기가 커서 Git에 포함하지 않음)
 output/estimates/
 

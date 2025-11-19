@@ -61,7 +61,7 @@ uv pip install eps-estimates-collector
 
 - **Cloudflare R2** (Optional - CI/CD only):
   - For GitHub Actions workflow only
-  - Install: `uv sync --extra r2`
+  - Automatically included via `boto3` dependency
 
 ## Usage
 
@@ -70,11 +70,8 @@ uv pip install eps-estimates-collector
 ```python
 from eps_estimates_collector import calculate_pe_ratio
 
-# Calculate P/E ratios (auto-loads CSV from public URL)
-pe_df = calculate_pe_ratio(
-    price_data={'2024-01-15': 150.5, '2024-02-15': 152.3},
-    type='forward'
-)
+# Calculate P/E ratios (auto-loads CSV and S&P 500 prices)
+pe_df = calculate_pe_ratio(type='forward')
 print(pe_df)
 ```
 
@@ -111,10 +108,7 @@ print(pe_df)
 │                                                                  │
 │  from eps_estimates_collector import calculate_pe_ratio           │
 │                                                                  │
-│  pe_df = calculate_pe_ratio(                                     │
-│      price_data={'2024-01-15': 150.5},                           │
-│      type='forward'                                              │
-│  )                                                               │
+│  pe_df = calculate_pe_ratio(type='forward')                      │
 │     │                                                            │
 │     ├─ read_csv_from_cloud("extracted_estimates.csv")            │
 │     │      │                                                     │
@@ -130,6 +124,7 @@ print(pe_df)
 - ✅ No API keys required
 - ✅ Always loads latest data
 - ✅ No local files needed
+- ✅ Auto-loads S&P 500 prices from yfinance
 
 ### User Flow 2: GitHub Actions Workflow (Read/Write)
 
@@ -211,29 +206,31 @@ Same structure, contains OCR confidence scores (0-1).
 
 ## API Reference
 
-### `calculate_pe_ratio(price_data, type='forward', output_csv=None)`
+### `calculate_pe_ratio(type='forward')`
 
-Calculate P/E ratios from EPS estimates.
+Calculate P/E ratios from EPS estimates using S&P 500 prices.
 
 **Parameters:**
-- `price_data` (DataFrame | dict | None):
-  - DataFrame: columns `Date`, `Price`
-  - Dict: `{'2024-01-15': 150.5, ...}`
-  - None: Returns template
 - `type` (str): `'forward'`, `'mix'`, or `'trailing-like'`
-- `output_csv` (Path, optional): Save results
+  - `'forward'`: Q[1:5] - Next 4 quarters after report date
+  - `'mix'`: Q[0:4] - Report date and next 3 quarters
+  - `'trailing-like'`: Q[-3:1] - Last 3 quarters before and report date
 
-**Returns:** DataFrame with P/E ratios
+**Returns:** DataFrame with columns:
+- `Report_Date`: EPS report date
+- `Price_Date`: Trading day price date
+- `Price`: S&P 500 closing price
+- `EPS_4Q_Sum`: 4-quarter EPS sum
+- `PE_Ratio`: Calculated P/E ratio
+- `Type`: P/E type used
 
 **Example:**
 ```python
 from eps_estimates_collector import calculate_pe_ratio
 
-pe_df = calculate_pe_ratio(
-    price_data={'2024-01-15': 150.5},
-    type='forward',
-    output_csv='pe_ratios.csv'
-)
+# Auto-loads CSV from public URL and S&P 500 prices from yfinance
+pe_df = calculate_pe_ratio(type='forward')
+print(pe_df)
 ```
 
 ## GitHub Actions
