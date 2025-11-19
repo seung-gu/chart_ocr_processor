@@ -7,6 +7,7 @@ from pathlib import Path
 import cv2
 import pandas as pd
 
+from src.factset_data_collector.utils.csv_storage import read_csv
 from .bar_classifier import classify_all_bars
 from .coordinate_matcher import match_quarters_with_numbers
 from .google_vision_processor import extract_text_from_image, extract_text_with_boxes
@@ -104,17 +105,20 @@ def process_directory(
     Returns:
         DataFrame containing extracted data
     """
-    # Load existing CSV to check processed dates (local only)
+    # Load existing CSV to check processed dates (from public URL or local)
     existing_df = None
     processed_dates = set()
-    if output_csv and output_csv.exists():
+    if output_csv:
         try:
-            existing_df = pd.read_csv(output_csv)
-            existing_df = existing_df.drop(columns=['Confidence'], errors='ignore')
-            if not existing_df.empty:
-                existing_df['Report_Date'] = pd.to_datetime(existing_df['Report_Date'])
-                processed_dates = set(existing_df['Report_Date'].dt.strftime('%Y%m%d'))
-                logger.info(f"Found existing CSV with {len(existing_df)} records")
+            # Try reading from public URL first, then fallback to local
+            cloud_path = output_csv.name
+            existing_df = read_csv(cloud_path, output_csv)
+            if existing_df is not None:
+                existing_df = existing_df.drop(columns=['Confidence'], errors='ignore')
+                if not existing_df.empty:
+                    existing_df['Report_Date'] = pd.to_datetime(existing_df['Report_Date'])
+                    processed_dates = set(existing_df['Report_Date'].dt.strftime('%Y%m%d'))
+                    logger.info(f"Found existing CSV with {len(existing_df)} records")
         except Exception as e:
             logger.warning(f"Could not read existing CSV: {e}")
     
@@ -136,13 +140,19 @@ def process_directory(
     current_df = existing_df.copy() if existing_df is not None and not existing_df.empty else pd.DataFrame()
     confidence_csv = output_csv.parent / f"{output_csv.stem}_confidence.csv" if output_csv else None
     
-    # Load existing confidence CSV if it exists
+    # Load existing confidence CSV if it exists (from public URL or local)
     current_confidence_df = pd.DataFrame()
-    if confidence_csv and confidence_csv.exists():
+    if confidence_csv:
         try:
-            current_confidence_df = pd.read_csv(confidence_csv)
-            if not current_confidence_df.empty:
+            # Try reading from public URL first, then fallback to local
+            confidence_cloud_path = confidence_csv.name
+            loaded_confidence_df = read_csv(confidence_cloud_path, confidence_csv)
+            if loaded_confidence_df is not None and not loaded_confidence_df.empty:
+                current_confidence_df = loaded_confidence_df.copy()
                 current_confidence_df['Report_Date'] = pd.to_datetime(current_confidence_df['Report_Date'])
+                logger.info(f"Loaded existing confidence CSV with {len(current_confidence_df)} records")
+            else:
+                logger.info("No existing confidence CSV found, starting fresh")
         except Exception as e:
             logger.warning(f"Could not read existing confidence CSV: {e}")
     
@@ -172,22 +182,23 @@ def process_directory(
                 quarter_cols = sorted([c for c in current_df.columns if c != 'Report_Date'], key=_parse_quarter_for_sort)
                 current_df = current_df[['Report_Date'] + quarter_cols]
             
-            # Save (local only)
+            # Merge confidence data (accumulate across all images)
+            df_confidence['Report_Date'] = pd.to_datetime(df_confidence['Report_Date'])
+            if current_confidence_df.empty:
+                current_confidence_df = df_confidence.copy()
+            else:
+                current_confidence_df = pd.concat([current_confidence_df, df_confidence], ignore_index=True).drop_duplicates(subset=['Report_Date'], keep='last').sort_values('Report_Date').reset_index(drop=True)
+            
+            # Save (local only) - save after each image to preserve progress
             if output_csv:
                 current_df['Report_Date'] = pd.to_datetime(current_df['Report_Date'])
                 df_to_save = current_df.copy().assign(Report_Date=lambda x: x['Report_Date'].dt.strftime('%Y-%m-%d'))
                 df_to_save.to_csv(output_csv, index=False)
                 
-                # Confidence CSV: merge and deduplicate (same as main CSV)
-                df_confidence['Report_Date'] = pd.to_datetime(df_confidence['Report_Date'])
-                if current_confidence_df.empty:
-                    current_confidence_df = df_confidence
-                else:
-                    current_confidence_df = pd.concat([current_confidence_df, df_confidence], ignore_index=True).drop_duplicates(subset=['Report_Date'], keep='last').sort_values('Report_Date').reset_index(drop=True)
-                
+                # Save confidence CSV (accumulated across all processed images)
                 df_confidence_to_save = current_confidence_df.copy().assign(Report_Date=lambda x: x['Report_Date'].dt.strftime('%Y-%m-%d'))
                 df_confidence_to_save.to_csv(confidence_csv, index=False)
-                print(f"✅ {len(current_df)} records")
+                print(f"✅ {len(current_df)} records (confidence: {len(current_confidence_df)} records)")
                 
         except Exception as e:
             print(f"❌ {e}")
