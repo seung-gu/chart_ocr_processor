@@ -1,6 +1,6 @@
 [project]
 name = "factset-data-collector"
-version = "0.1.0"
+version = "0.2.0"
 description = "Extract quarterly EPS estimates from FactSet Earnings Insight reports"
 requires-python = ">=3.11"
 dependencies = [
@@ -17,14 +17,28 @@ dependencies = [
 
 [project.optional-dependencies]
 r2 = ["boto3>=1.28.0"]
+dev = ["pytest>=7.4.0", "pytest-cov>=4.1.0"]
 
 [project.scripts]
 factset-data-collector = "main:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/chart_ocr_processor"]
+packages = ["src/factset_data_collector"]
 force-include = { "main.py" = "main.py" }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["scripts/testing"]
+pythonpath = ["."]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --strict-markers --disable-warnings"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]

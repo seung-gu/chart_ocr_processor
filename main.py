@@ -1,74 +1,44 @@
-"""Main execution script."""
+"""Local execution: Process images with OCR.
 
-import argparse
+This script provides a local entry point for processing chart images.
+For programmatic use, import from the main package:
+    from factset_data_collector import process_images
+"""
+import sys
 from pathlib import Path
 
-from src.chart_ocr_processor.processor import process_directory
+# Add project root to path
+PROJECT_ROOT = Path(__file__).parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.factset_data_collector import process_images
 
 
 def main():
-    """Main function."""
-    parser = argparse.ArgumentParser(
-        description='Extract quarters and values from chart images.'
-    )
-    parser.add_argument(
-        '--input-dir',
-        type=str,
-        default='output/estimates',
-        help='Directory containing image files (default: output/estimates)'
-    )
-    parser.add_argument(
-        '--output',
-        type=str,
-        default='output/extracted_estimates.csv',
-        help='CSV file path to save results (default: output/extracted_estimates.csv)'
-    )
-    parser.add_argument(
-        '--no-coordinate-matching',
-        action='store_true',
-        help='Use text-based parsing instead of coordinate-based matching'
-    )
-    parser.add_argument(
-        '--no-bar-classification',
-        action='store_true',
-        help='Do not perform bar graph classification'
-    )
-    parser.add_argument(
-        '--single-method',
-        action='store_true',
-        help='Use single method for bar graph classification (do not use all 3 methods)'
-    )
-    parser.add_argument(
-        '--limit',
-        type=int,
-        default=None,
-        help='Maximum number of images to process (for testing)'
+    """Main entry point for local image processing."""
+    # Default paths
+    estimates_dir = PROJECT_ROOT / "output" / "estimates"
+    output_csv = PROJECT_ROOT / "output" / "extracted_estimates.csv"
+    
+    print("=" * 80)
+    print("FactSet Data Processor (Local)")
+    print("=" * 80)
+    print()
+    
+    # Process images
+    df = process_images(
+        directory=estimates_dir,
+        output_csv=output_csv,
+        use_coordinate_matching=True,
+        classify_bars=True,
+        use_multiple_methods=True
     )
     
-    args = parser.parse_args()
-    
-    input_dir = Path(args.input_dir)
-    output_file = Path(args.output)
-    
-    if not input_dir.exists():
-        print(f"Error: Input directory does not exist: {input_dir}")
-        return
-    
-    # Create output directory
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    
-    # Execute processing
-    df = process_directory(
-        directory=input_dir,
-        output_csv=output_file,
-        use_coordinate_matching=not args.no_coordinate_matching,
-        classify_bars=not args.no_bar_classification,
-        use_multiple_methods=not args.single_method,
-        limit=args.limit
-    )
-    
-    print(f"\nProcessing complete: Extracted {len(df)} records.")
-    print(f"Result file: {output_file}")
+    print()
+    print("=" * 80)
+    print(f"✅ Complete: {len(df)} records processed")
+    print(f"   Output: {output_csv}")
+    print("=" * 80)
 
 
 if __name__ == '__main__':

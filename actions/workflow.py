@@ -18,10 +18,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.data_collection.download_factset_pdfs import download_factset_pdfs, main as download_main
-from scripts.data_collection.extract_eps_charts import main as extract_main
-from src.chart_ocr_processor.processor import process_directory
-from src.service.cloudflare import (
+from src.factset_data_collector import download_pdfs, extract_charts, process_images
+from src.factset_data_collector.utils import (
     CLOUD_STORAGE_ENABLED,
     download_from_cloud,
     list_cloud_files,
@@ -43,8 +41,9 @@ def main():
         return
     
     # Step 0: Download CSV from cloud
-    print("\n\n📥 Step 0: Downloading CSV from cloud...")
     print("-" * 80)
+    print(" 📥 Step 0: Downloading CSV from cloud...")
+    
     csv_file = PROJECT_ROOT / "output" / "extracted_estimates.csv"
     confidence_csv_file = PROJECT_ROOT / "output" / "extracted_estimates_confidence.csv"
     
@@ -64,8 +63,8 @@ def main():
     print()
     
     # Step 1: Check for new PDFs
-    print("\n\n🔍 Step 1: Checking for new PDFs...")
     print("-" * 80)
+    print(" 🔍 Step 1: Checking for new PDFs...")
     
     # Get last date from CSV
     last_date = None
@@ -86,14 +85,20 @@ def main():
     print(f"📦 Found {len(cloud_pdf_names)} PDFs in cloud")
     
     # Download new PDFs
-    print("\n\n📥 Step 2: Downloading new PDFs from FactSet...")
     print("-" * 80)
+    print(" 📥 Step 2: Downloading new PDFs from FactSet...")
+    
     try:
-        download_main()
+        pdf_dir = PROJECT_ROOT / "output" / "factset_pdfs"
+        pdfs = download_pdfs(
+            start_date=datetime(2016, 1, 1),
+            end_date=datetime.now(),
+            outpath=pdf_dir,
+            rate_limit=0.05
+        )
         
         # Check if any new PDFs were downloaded
-        local_pdf_dir = PROJECT_ROOT / "output" / "factset_pdfs"
-        local_pdfs = list(local_pdf_dir.glob("*.pdf")) if local_pdf_dir.exists() else []
+        local_pdfs = list(pdf_dir.glob("*.pdf")) if pdf_dir.exists() else []
         new_pdfs = [p for p in local_pdfs if p.name not in cloud_pdf_names]
         
         if not new_pdfs:
@@ -106,38 +111,25 @@ def main():
         return
     
     # Step 3: Extract PNGs
-    print("\n\n 🖼️  Step 3: Extracting EPS chart pages...")
     print("-" * 80)
+    print(" 🖼️  Step 3: Extracting EPS chart pages...")
+    
     try:
-        extract_main()
-        print("✅ PNG extraction complete\n")
+        estimates_dir = PROJECT_ROOT / "output" / "estimates"
+        charts = extract_charts(local_pdfs, outpath=estimates_dir)
+        print(f"✅ PNG extraction complete: {len(charts)} charts\n")
     except Exception as e:
         print(f"❌ PNG extraction failed: {e}\n")
         return
     
     # Step 4: Process images
-    print("\n\n 🔍 Step 4: Processing images and extracting data...")
     print("-" * 80)
+    print(" 🔍 Step 4: Processing images and extracting data...")
+    
     try:
-        # Set logging level to INFO for better visibility
-        import logging
-        logging.basicConfig(level=logging.INFO)
-        
-        estimates_dir = PROJECT_ROOT / "output" / "estimates"
         output_csv = PROJECT_ROOT / "output" / "extracted_estimates.csv"
         
-        # Check if Google Cloud credentials are set
-        google_creds = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-        if google_creds:
-            print(f"✅ Google Cloud credentials found: {google_creds}")
-            if Path(google_creds).exists():
-                print(f"✅ Credentials file exists")
-            else:
-                print(f"⚠️  Credentials file not found at: {google_creds}")
-        else:
-            print("⚠️  GOOGLE_APPLICATION_CREDENTIALS not set")
-        
-        df = process_directory(
+        df = process_images(
             directory=estimates_dir,
             output_csv=output_csv,
             use_coordinate_matching=True,
@@ -150,11 +142,10 @@ def main():
         return
     
     # Step 5: Upload to cloud
-    print("\n\n☁️  Step 5: Uploading results to cloud...")
     print("-" * 80)
+    print(" ☁️  Step 5: Uploading results to cloud...")
     
     # Upload new PDFs
-    pdf_dir = PROJECT_ROOT / "output" / "factset_pdfs"
     uploaded_pdfs = 0
     if pdf_dir.exists():
         for pdf_file in pdf_dir.glob("*.pdf"):
@@ -165,11 +156,10 @@ def main():
     print(f"✅ Uploaded {uploaded_pdfs} PDF(s) to cloud")
     
     # Upload new PNGs
-    png_dir = PROJECT_ROOT / "output" / "estimates"
     uploaded_pngs = 0
-    if png_dir.exists():
+    if estimates_dir.exists():
         cloud_pngs = {Path(p).name for p in list_cloud_files('estimates/')}
-        for png_file in png_dir.glob("*.png"):
+        for png_file in estimates_dir.glob("*.png"):
             if png_file.name not in cloud_pngs:
                 cloud_path = f"estimates/{png_file.name}"
                 if upload_to_cloud(png_file, cloud_path):
@@ -193,4 +183,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

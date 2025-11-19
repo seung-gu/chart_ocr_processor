@@ -1,4 +1,4 @@
-"""Google Cloud Vision API로 전체 이미지 OCR을 수행하고 텍스트를 표시하는 스크립트."""
+"""Script to perform full image OCR using Google Cloud Vision API and display text."""
 
 from pathlib import Path
 import cv2
@@ -13,77 +13,77 @@ except ImportError:
     GOOGLE_VISION_AVAILABLE = False
     print("Warning: google-cloud-vision not available. Install with: uv add google-cloud-vision")
 
-# .env 파일에서 환경변수 로드
+# Load environment variables from .env file
 load_dotenv()
 
 
 def visualize_google_ocr_full(image_path: Path, output_path: Path):
-    """Google Cloud Vision API로 전체 이미지 OCR을 수행하고 텍스트를 표시합니다."""
-    # 이미지 읽기
+    """Perform full image OCR using Google Cloud Vision API and display text."""
+    # Read image
     image = cv2.imread(str(image_path))
     if image is None:
-        print(f"이미지를 읽을 수 없습니다: {image_path}")
+        print(f"Cannot read image: {image_path}")
         return
     
     if not GOOGLE_VISION_AVAILABLE:
-        print("Google Cloud Vision이 설치되지 않았습니다.")
+        print("Google Cloud Vision is not installed.")
         return
     
-    # Google Cloud Vision 초기화
+    # Initialize Google Cloud Vision
     try:
-        # .env 파일에서 키 파일 경로 확인
+        # Check key file path from .env file
         creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
         
         if not creds_path:
-            print("Google Cloud Vision 인증이 필요합니다.")
-            print(".env 파일에 다음을 추가하세요:")
+            print("Google Cloud Vision authentication required.")
+            print("Add the following to your .env file:")
             print("  GOOGLE_APPLICATION_CREDENTIALS=/path/to/your-key.json")
             return
         
-        # JSON 파일 경로인지 확인
+        # Check if it's a JSON file path
         if not creds_path.endswith('.json') or not Path(creds_path).exists():
-            print(f"오류: 키 파일을 찾을 수 없습니다: {creds_path}")
+            print(f"Error: Key file not found: {creds_path}")
             return
         
         from google.oauth2 import service_account
         credentials = service_account.Credentials.from_service_account_file(creds_path)
         google_client = vision.ImageAnnotatorClient(credentials=credentials)
-        print(f"Google Cloud Vision 인증 완료: {creds_path}")
-        print("Google Cloud Vision 초기화 완료")
+        print(f"Google Cloud Vision authentication completed: {creds_path}")
+        print("Google Cloud Vision initialization completed")
     except Exception as e:
-        print(f"Google Cloud Vision 초기화 실패: {e}")
+        print(f"Google Cloud Vision initialization failed: {e}")
         return
     
-    # 전체 이미지에 Google Vision API OCR 수행
-    print("\n=== Google Cloud Vision 전체 이미지 OCR 처리 중 ===")
+    # Perform Google Vision API OCR on full image
+    print("\n=== Processing full image OCR with Google Cloud Vision ===")
     
     try:
-        # 이미지를 bytes로 변환
+        # Convert image to bytes
         _, buffer = cv2.imencode('.jpg', image)
         image_bytes = buffer.tobytes()
         
-        # Google Vision API 호출 (전체 이미지)
+        # Call Google Vision API (full image)
         vision_image = vision.Image(content=image_bytes)
         response = google_client.text_detection(image=vision_image)
         
         if response.error.message:
-            print(f"Google Vision API 오류: {response.error.message}")
+            print(f"Google Vision API error: {response.error.message}")
             return
         
-        # 결과 이미지 생성
+        # Create result image
         img_result = image.copy()
         ocr_results = []
         
         if response.text_annotations:
-            # 첫 번째 결과는 전체 텍스트
+            # First result is full text
             full_text = response.text_annotations[0].description
-            print(f"\n전체 인식된 텍스트:\n{full_text[:500]}...")  # 처음 500자만 출력
+            print(f"\nFull recognized text:\n{full_text[:500]}...")  # Print first 500 characters only
             
-            # 나머지는 개별 단어/텍스트 영역
+            # Rest are individual word/text regions
             for i, annotation in enumerate(response.text_annotations[1:], 1):
                 vertices = annotation.bounding_poly.vertices
                 
-                # 바운딩 박스 좌표 추출
+                # Extract bounding box coordinates
                 points = []
                 for vertex in vertices:
                     points.append([vertex.x, vertex.y])
@@ -99,31 +99,31 @@ def visualize_google_ocr_full(image_path: Path, output_path: Path):
                         'confidence': confidence
                     })
                     
-                    # 박스 그리기
+                    # Draw box
                     pts = np.array(points, dtype=np.int32)
                     cv2.polylines(img_result, [pts], True, (0, 255, 0), 2)
                     
-                    # 텍스트 표시
+                    # Display text
                     if points:
                         x, y = int(points[0][0]), int(points[0][1])
                         display_text = text[:30] if len(text) > 30 else text
                         cv2.putText(img_result, display_text, (x, y - 5),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 3)
         
-        # 저장
+        # Save
         cv2.imwrite(str(output_path), img_result)
-        print(f"\nGoogle Cloud Vision 시각화 결과를 {output_path}에 저장했습니다.")
+        print(f"\nGoogle Cloud Vision visualization results saved to {output_path}")
         
-        # 결과 출력
-        print(f"\n=== Google Cloud Vision 결과 (총 {len(ocr_results)}개) ===")
-        for result in ocr_results[:50]:  # 처음 50개만 출력
+        # Print results
+        print(f"\n=== Google Cloud Vision Results (Total: {len(ocr_results)}) ===")
+        for result in ocr_results[:50]:  # Print first 50 only
             print(f"{result['index']:3d}. '{result['text']}' (confidence: {result['confidence']:.2f})")
         
         if len(ocr_results) > 50:
-            print(f"... 외 {len(ocr_results) - 50}개 더")
+            print(f"... and {len(ocr_results) - 50} more")
             
     except Exception as e:
-        print(f"Google OCR 오류: {e}")
+        print(f"Google OCR error: {e}")
         import traceback
         traceback.print_exc()
 
@@ -133,4 +133,3 @@ if __name__ == '__main__':
     output_path = Path('output/preprocessing_test/20161209-6_google_ocr_full.png')
     
     visualize_google_ocr_full(test_image, output_path)
-

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.service.cloudflare import (
+from .cloudflare import (
     CLOUD_STORAGE_ENABLED,
     file_exists_in_cloud,
     read_csv_from_cloud,
