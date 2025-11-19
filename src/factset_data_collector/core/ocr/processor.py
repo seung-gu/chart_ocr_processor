@@ -119,14 +119,30 @@ def _get_images_to_process(directory: Path, processed_dates: set[str], limit: in
 def _merge_data(current_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
     """Merge new data with existing data."""
     if current_df.empty:
-        result_df = new_df
-    else:
-        new_df['Report_Date'] = pd.to_datetime(new_df['Report_Date'])
-        current_df['Report_Date'] = pd.to_datetime(current_df['Report_Date'])
-        result_df = pd.concat([current_df, new_df], ignore_index=True)\
-            .drop_duplicates(subset=['Report_Date'], keep='last')\
-            .sort_values('Report_Date')\
-            .reset_index(drop=True)
+        return new_df.copy()
+    
+    if new_df.empty:
+        return current_df.copy()
+    
+    # Create copies to avoid modifying originals
+    current_copy = current_df.copy()
+    new_copy = new_df.copy()
+    
+    # Ensure Report_Date is datetime (both should already be datetime, but ensure consistency)
+    current_copy['Report_Date'] = pd.to_datetime(current_copy['Report_Date'])
+    new_copy['Report_Date'] = pd.to_datetime(new_copy['Report_Date'])
+    
+    # Debug: log counts before merge
+    logger.debug(f"Merging: current={len(current_copy)} records, new={len(new_copy)} records")
+    
+    # Concat and deduplicate (keep='last' means new data overwrites old for same date)
+    result_df = pd.concat([current_copy, new_copy], ignore_index=True)\
+        .drop_duplicates(subset=['Report_Date'], keep='last')\
+        .sort_values('Report_Date')\
+        .reset_index(drop=True)
+    
+    # Debug: log count after merge
+    logger.debug(f"After merge: {len(result_df)} records")
     
     # Sort quarter columns
     quarter_cols = sorted([c for c in result_df.columns if c != 'Report_Date'], key=_parse_quarter_for_sort)
@@ -158,7 +174,18 @@ def process_directory(directory: Path, limit: int | None = None) -> tuple[pd.Dat
     
     # Process images
     print(f"\n🔄 Processing {len(image_files)} new images...")
-    current_df = existing_df.copy() if existing_df is not None and not existing_df.empty else pd.DataFrame()
+    
+    # Initialize current_df with existing data (deep copy to avoid modification)
+    if existing_df is not None and not existing_df.empty:
+        current_df = existing_df.copy(deep=True)
+        # Ensure Report_Date is datetime (should already be, but ensure consistency)
+        current_df['Report_Date'] = pd.to_datetime(current_df['Report_Date'])
+        print(f"📋 Loaded {len(current_df)} existing records")
+        logger.debug(f"Existing dates: {sorted(current_df['Report_Date'].dt.strftime('%Y-%m-%d').tolist()[:5])}...")
+    else:
+        current_df = pd.DataFrame()
+        print("📋 No existing data found")
+    
     all_long_results = []
     
     for idx, image_path in enumerate(image_files, 1):
@@ -172,19 +199,36 @@ def process_directory(directory: Path, limit: int | None = None) -> tuple[pd.Dat
             
             all_long_results.extend(results)
             new_df = convert_to_wide_format(pd.DataFrame(results))
+            
+            # Debug: check before merge
+            before_count = len(current_df)
             current_df = _merge_data(current_df, new_df)
+            after_count = len(current_df)
+            
+            if after_count < before_count:
+                logger.warning(f"Data loss detected: {before_count} -> {after_count} records")
+            
             print("✅")
                 
         except Exception as e:
             print(f"❌ {e}")
             logger.error(f"Error: {e}")
     
-    print(f"\n📊 Complete: {len(current_df)} total records\n")
+    print(f"\n📊 Complete: {len(current_df)} total records (existing: {len(existing_df) if existing_df is not None and not existing_df.empty else 0}, new: {len(image_files)})\n")
+    
+    # If no new data was processed, return existing data
+    if current_df.empty and (existing_df is not None and not existing_df.empty):
+        # Format existing data before returning
+        existing_df_formatted = existing_df.copy()
+        existing_df_formatted['Report_Date'] = pd.to_datetime(existing_df_formatted['Report_Date']).dt.strftime('%Y-%m-%d')
+        existing_confidence_formatted = existing_confidence_df.copy() if existing_confidence_df is not None and not existing_confidence_df.empty else pd.DataFrame(columns=['Report_Date'])
+        if not existing_confidence_formatted.empty:
+            existing_confidence_formatted['Report_Date'] = pd.to_datetime(existing_confidence_formatted['Report_Date']).dt.strftime('%Y-%m-%d')
+        return existing_df_formatted, existing_confidence_formatted
     
     if current_df.empty:
         empty_df = pd.DataFrame(columns=['Report_Date'])
-        return (existing_df if existing_df is not None else empty_df,
-                existing_confidence_df if existing_confidence_df is not None else empty_df)
+        return empty_df, pd.DataFrame(columns=['Report_Date', 'Confidence'])
     
     # Calculate confidence for new data only
     confidence_df = _calculate_new_confidence(all_long_results, current_df) if all_long_results else None
@@ -192,26 +236,36 @@ def process_directory(directory: Path, limit: int | None = None) -> tuple[pd.Dat
     # Merge with existing confidence
     confidence_df = _merge_confidence(existing_confidence_df, confidence_df)
     
-    # Format dates
-    current_df['Report_Date'] = pd.to_datetime(current_df['Report_Date']).dt.strftime('%Y-%m-%d')
-    confidence_df['Report_Date'] = pd.to_datetime(confidence_df['Report_Date']).dt.strftime('%Y-%m-%d')
+    # Format dates (ensure all dates are formatted consistently)
+    if not current_df.empty:
+        current_df['Report_Date'] = pd.to_datetime(current_df['Report_Date']).dt.strftime('%Y-%m-%d')
+    if not confidence_df.empty:
+        confidence_df['Report_Date'] = pd.to_datetime(confidence_df['Report_Date']).dt.strftime('%Y-%m-%d')
     
     return current_df, confidence_df
 
 
 def _calculate_new_confidence(all_long_results: list, current_df: pd.DataFrame) -> pd.DataFrame | None:
     """Calculate confidence DataFrame for newly processed data."""
-    df_long = pd.DataFrame(all_long_results)
-    new_dates = set(df_long['report_date'].unique())
-    
-    # Convert Report_Date to string for comparison
-    current_df['Report_Date'] = pd.to_datetime(current_df['Report_Date'])
-    new_df_wide = current_df[current_df['Report_Date'].dt.strftime('%Y-%m-%d').isin(new_dates)].copy()
-    
-    if new_df_wide.empty:
+    if not all_long_results:
         return None
     
-    return calculate_confidence_dataframe(new_df_wide, df_long, current_df)
+    df_long = pd.DataFrame(all_long_results)
+    
+    # Normalize report_date to datetime
+    df_long['report_date'] = pd.to_datetime(df_long['report_date'])
+    new_dates = set(df_long['report_date'].dt.strftime('%Y-%m-%d'))
+    
+    # Create copy to avoid modifying original
+    df_copy = current_df.copy()
+    df_copy['Report_Date'] = pd.to_datetime(df_copy['Report_Date'])
+    new_df_wide = df_copy[df_copy['Report_Date'].dt.strftime('%Y-%m-%d').isin(new_dates)].copy()
+    
+    if new_df_wide.empty:
+        logger.warning(f"No matching dates found. new_dates: {new_dates}, current_df dates: {df_copy['Report_Date'].dt.strftime('%Y-%m-%d').tolist()}")
+        return None
+    
+    return calculate_confidence_dataframe(new_df_wide, df_long, df_copy)
 
 
 def _merge_confidence(existing: pd.DataFrame | None, new: pd.DataFrame | None) -> pd.DataFrame:
@@ -269,6 +323,9 @@ def convert_to_wide_format(df: pd.DataFrame) -> pd.DataFrame:
     # Rename column: report_date -> Report_Date
     df_pivot = df_pivot.rename(columns={'report_date': 'Report_Date'})
     
+    # Ensure Report_Date is datetime (for consistent merging)
+    df_pivot['Report_Date'] = pd.to_datetime(df_pivot['Report_Date'])
+    
     # Sort quarter columns (Q1'14, Q2'14, ... order)
     quarter_columns = sorted(
         [col for col in df_pivot.columns if col != 'Report_Date'],
@@ -291,18 +348,29 @@ def calculate_confidence_dataframe(
 ) -> pd.DataFrame:
     """Calculate confidence DataFrame for new data."""
     consistency_df = full_df_wide if full_df_wide is not None else df_wide
+    
+    # Ensure Report_Date is datetime for comparison
+    consistency_df['Report_Date'] = pd.to_datetime(consistency_df['Report_Date'])
     first_date = sorted(consistency_df['Report_Date'].unique())[0] if len(consistency_df) > 0 else None
+    
+    # Normalize df_long report_date to datetime for comparison
+    df_long = df_long.copy()
+    df_long['report_date'] = pd.to_datetime(df_long['report_date'])
     
     results = []
     for report_date in df_wide['Report_Date']:
-        date_data = df_long[df_long['report_date'] == report_date]
+        # Convert report_date to datetime for comparison
+        report_date_dt = pd.to_datetime(report_date)
+        date_data = df_long[df_long['report_date'] == report_date_dt]
+        
         if date_data.empty:
+            logger.warning(f"No matching data for date {report_date} in df_long")
             results.append({'Report_Date': report_date, 'Confidence': 0.0})
             continue
         
         bar_score = _calculate_bar_score(date_data)
-        consistency_score = 100.0 if report_date == first_date else \
-            calculate_consistency_with_previous_week_wide(report_date, date_data, consistency_df)
+        consistency_score = 100.0 if report_date_dt == first_date else \
+            calculate_consistency_with_previous_week_wide(str(report_date_dt.date()), date_data, consistency_df)
         
         confidence = round((bar_score * 0.5) + (consistency_score * 0.5), 1)
         results.append({'Report_Date': report_date, 'Confidence': confidence})
