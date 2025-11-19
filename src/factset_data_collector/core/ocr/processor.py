@@ -91,9 +91,10 @@ def process_image(image_path: Path) -> list[dict]:
         return []
 
 
-def _load_existing_data() -> tuple[pd.DataFrame | None, set[str]]:
+def _load_existing_data() -> tuple[pd.DataFrame | None, pd.DataFrame | None, set[str]]:
     """Load existing data from public URL and get processed dates."""
     existing_df = read_csv_from_cloud("extracted_estimates.csv")
+    existing_confidence_df = read_csv_from_cloud("extracted_estimates_confidence.csv")
     processed_dates = set()
     
     if existing_df is not None and not existing_df.empty:
@@ -101,7 +102,7 @@ def _load_existing_data() -> tuple[pd.DataFrame | None, set[str]]:
         existing_df['Report_Date'] = pd.to_datetime(existing_df['Report_Date'])
         processed_dates = set(existing_df['Report_Date'].dt.strftime('%Y%m%d'))
     
-    return existing_df, processed_dates
+    return existing_df, existing_confidence_df, processed_dates
 
 
 def _get_images_to_process(directory: Path, processed_dates: set[str], limit: int | None) -> list[Path]:
@@ -132,7 +133,7 @@ def _merge_data(current_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
     return result_df[['Report_Date'] + quarter_cols]
 
 
-def process_directory(directory: Path, limit: int | None = None) -> pd.DataFrame:
+def process_directory(directory: Path, limit: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Process all images in a directory.
     
     Args:
@@ -140,22 +141,25 @@ def process_directory(directory: Path, limit: int | None = None) -> pd.DataFrame
         limit: Maximum number of images to process (None to process all)
         
     Returns:
-        DataFrame with extracted data (Report_Date + quarter columns)
+        Tuple of (main DataFrame, confidence DataFrame)
     """
     # Load existing data
-    existing_df, processed_dates = _load_existing_data()
+    existing_df, existing_confidence_df, processed_dates = _load_existing_data()
     
     # Get images to process
     image_files = _get_images_to_process(directory, processed_dates, limit)
     
     if not image_files:
-        if not existing_df and not list(directory.glob('*.png')):
+        if (existing_df is None or existing_df.empty) and not list(directory.glob('*.png')):
             print(f"\n⚠️  No PNG images found in {directory}")
-        return existing_df if existing_df is not None else pd.DataFrame(columns=['Report_Date'])
+        empty_df = pd.DataFrame(columns=['Report_Date'])
+        return (existing_df if existing_df is not None and not existing_df.empty else empty_df,
+                existing_confidence_df if existing_confidence_df is not None and not existing_confidence_df.empty else empty_df)
     
     # Process images
     print(f"\n🔄 Processing {len(image_files)} new images...")
     current_df = existing_df.copy() if existing_df is not None and not existing_df.empty else pd.DataFrame()
+    all_long_results = []
     
     for idx, image_path in enumerate(image_files, 1):
         print(f"[{idx}/{len(image_files)}] {image_path.name}", end=" ... ")
@@ -166,6 +170,7 @@ def process_directory(directory: Path, limit: int | None = None) -> pd.DataFrame
                 print("⚠️  No data")
                 continue
             
+            all_long_results.extend(results)
             new_df = convert_to_wide_format(pd.DataFrame(results))
             current_df = _merge_data(current_df, new_df)
             print("✅")
@@ -177,10 +182,53 @@ def process_directory(directory: Path, limit: int | None = None) -> pd.DataFrame
     print(f"\n📊 Complete: {len(current_df)} total records\n")
     
     if current_df.empty:
-        return existing_df if existing_df is not None else pd.DataFrame(columns=['Report_Date'])
+        empty_df = pd.DataFrame(columns=['Report_Date'])
+        return (existing_df if existing_df is not None else empty_df,
+                existing_confidence_df if existing_confidence_df is not None else empty_df)
     
+    # Calculate confidence for new data only
+    confidence_df = _calculate_new_confidence(all_long_results, current_df) if all_long_results else None
+    
+    # Merge with existing confidence
+    confidence_df = _merge_confidence(existing_confidence_df, confidence_df)
+    
+    # Format dates
     current_df['Report_Date'] = pd.to_datetime(current_df['Report_Date']).dt.strftime('%Y-%m-%d')
-    return current_df
+    confidence_df['Report_Date'] = pd.to_datetime(confidence_df['Report_Date']).dt.strftime('%Y-%m-%d')
+    
+    return current_df, confidence_df
+
+
+def _calculate_new_confidence(all_long_results: list, current_df: pd.DataFrame) -> pd.DataFrame | None:
+    """Calculate confidence DataFrame for newly processed data."""
+    df_long = pd.DataFrame(all_long_results)
+    new_dates = set(df_long['report_date'].unique())
+    
+    # Convert Report_Date to string for comparison
+    current_df['Report_Date'] = pd.to_datetime(current_df['Report_Date'])
+    new_df_wide = current_df[current_df['Report_Date'].dt.strftime('%Y-%m-%d').isin(new_dates)].copy()
+    
+    if new_df_wide.empty:
+        return None
+    
+    return calculate_confidence_dataframe(new_df_wide, df_long, current_df)
+
+
+def _merge_confidence(existing: pd.DataFrame | None, new: pd.DataFrame | None) -> pd.DataFrame:
+    """Merge existing and new confidence DataFrames."""
+    if existing is None or existing.empty:
+        return new if new is not None and not new.empty else pd.DataFrame(columns=['Report_Date', 'Confidence'])
+    
+    if new is None or new.empty:
+        return existing.copy()
+    
+    existing['Report_Date'] = pd.to_datetime(existing['Report_Date'])
+    new['Report_Date'] = pd.to_datetime(new['Report_Date'])
+    
+    return pd.concat([existing, new], ignore_index=True)\
+        .drop_duplicates(subset=['Report_Date'], keep='last')\
+        .sort_values('Report_Date')\
+        .reset_index(drop=True)
 
 
 def convert_to_wide_format(df: pd.DataFrame) -> pd.DataFrame:
@@ -236,147 +284,101 @@ def convert_to_wide_format(df: pd.DataFrame) -> pd.DataFrame:
     return df_pivot
 
 
-def calculate_confidence_dataframe(df_wide: pd.DataFrame, df_long: pd.DataFrame) -> pd.DataFrame:
-    """Calculate confidence and return as separate DataFrame.
+def calculate_confidence_dataframe(
+    df_wide: pd.DataFrame, 
+    df_long: pd.DataFrame,
+    full_df_wide: pd.DataFrame | None = None
+) -> pd.DataFrame:
+    """Calculate confidence DataFrame for new data."""
+    consistency_df = full_df_wide if full_df_wide is not None else df_wide
+    first_date = sorted(consistency_df['Report_Date'].unique())[0] if len(consistency_df) > 0 else None
     
-    Args:
-        df_wide: Wide format DataFrame (Report_Date, Quarter columns)
-        df_long: Long format DataFrame (original data, includes bar_confidence, bar_color)
-        
-    Returns:
-        DataFrame with Report_Date and Confidence columns
-    """
-    # Calculate confidence for each report_date
-    confidences = []
-    report_dates = []
-    
-    # Sort dates to identify first data point
-    sorted_dates = sorted(df_wide['Report_Date'].unique())
-    first_date = sorted_dates[0] if sorted_dates else None
-    
+    results = []
     for report_date in df_wide['Report_Date']:
-        # Filter data for this date only
-        date_data = df_long[df_long['report_date'] == report_date].copy()
-        
+        date_data = df_long[df_long['report_date'] == report_date]
         if date_data.empty:
-            confidences.append(0.0)
-            report_dates.append(report_date)
+            results.append({'Report_Date': report_date, 'Confidence': 0.0})
             continue
         
-        # 1. Calculate bar confidence score (3/3 match = 100%, 2/3 = 67%, 1/3 = 33%)
-        bar_confidences = []
-        if 'bar_confidence' in date_data.columns:
-            for conf in date_data['bar_confidence']:
-                if conf == 'high':
-                    bar_confidences.append(100.0)
-                elif conf == 'medium':
-                    bar_confidences.append(67.0)
-                elif conf == 'low':
-                    bar_confidences.append(33.0)
-                else:
-                    bar_confidences.append(0.0)
+        bar_score = _calculate_bar_score(date_data)
+        consistency_score = 100.0 if report_date == first_date else \
+            calculate_consistency_with_previous_week_wide(report_date, date_data, consistency_df)
         
-        if bar_confidences:
-            bar_score = sum(bar_confidences) / len(bar_confidences)
-        else:
-            bar_score = 0.0
-        
-        # 2. Calculate consistency with previous week's data (actuals only)
-        # First data point excludes previous week comparison
-        if report_date == first_date:
-            # First data point uses only bar confidence (no previous week comparison)
-            consistency_score = 100.0  # Treat as 100% since no previous week comparison
-        else:
-            consistency_score = calculate_consistency_with_previous_week(
-                report_date, date_data, df_long
-            )
-        
-        # 3. Calculate combined confidence (weighted average)
-        # Bar graph consistency weight: 0.5, previous week consistency weight: 0.5
-        final_confidence = (bar_score * 0.5) + (consistency_score * 0.5)
-        
-        confidences.append(round(final_confidence, 1))
-        report_dates.append(report_date)
+        confidence = round((bar_score * 0.5) + (consistency_score * 0.5), 1)
+        results.append({'Report_Date': report_date, 'Confidence': confidence})
     
-    # Create DataFrame with Report_Date and Confidence
-    df_confidence = pd.DataFrame({
-        'Report_Date': report_dates,
-        'Confidence': confidences
-    })
-    
-    return df_confidence
+    return pd.DataFrame(results)
 
 
-def calculate_consistency_with_previous_week(
+def _calculate_bar_score(date_data: pd.DataFrame) -> float:
+    """Calculate bar classification confidence score."""
+    if 'bar_confidence' not in date_data.columns:
+        return 0.0
+    
+    scores = {'high': 100.0, 'medium': 67.0, 'low': 33.0}
+    bar_scores = [scores.get(conf, 0.0) for conf in date_data['bar_confidence']]
+    return sum(bar_scores) / len(bar_scores) if bar_scores else 0.0
+
+
+def calculate_consistency_with_previous_week_wide(
     current_date: str,
     current_data: pd.DataFrame,
-    all_data: pd.DataFrame
+    full_df_wide: pd.DataFrame
 ) -> float:
-    """Calculate consistency with the closest previous data (actuals only).
-    
-    Args:
-        current_date: Current report date (YYYY-MM-DD)
-        current_data: Data for current date
-        all_data: All data
-        
-    Returns:
-        Consistency rate (0-100)
-    """
+    """Calculate consistency with previous week (actuals only)."""
     try:
-        # Parse date
-        current_dt = datetime.strptime(current_date, '%Y-%m-%d')
+        current_dt = pd.to_datetime(current_date)
+        full_df_wide['Report_Date'] = pd.to_datetime(full_df_wide['Report_Date'])
         
-        # Find all dates before current date
-        all_dates = pd.to_datetime(all_data['report_date'].unique())
-        previous_dates = all_dates[all_dates < current_dt]
-        
+        previous_dates = full_df_wide[full_df_wide['Report_Date'] < current_dt]['Report_Date']
         if len(previous_dates) == 0:
             return 0.0
         
-        # Find closest previous date
-        previous_date = previous_dates.max().strftime('%Y-%m-%d')
+        previous_date = previous_dates.max()
+        current_row = full_df_wide[full_df_wide['Report_Date'] == current_dt]
+        previous_row = full_df_wide[full_df_wide['Report_Date'] == previous_date]
         
-        # Find previous data
-        previous_data = all_data[all_data['report_date'] == previous_date].copy()
-        
-        if previous_data.empty:
+        if current_row.empty or previous_row.empty:
             return 0.0
         
-        # Filter actuals only (bar_color is 'dark')
-        current_actual = current_data[current_data.get('bar_color', '') == 'dark'].copy()
-        previous_actual = previous_data[previous_data.get('bar_color', '') == 'dark'].copy()
+        current_row = current_row.iloc[0]
+        previous_row = previous_row.iloc[0]
         
-        if current_actual.empty or previous_actual.empty:
+        # Get actual quarters (dark bars)
+        actual_quarters = set()
+        if 'bar_color' in current_data.columns:
+            actual_quarters = set(current_data[current_data['bar_color'] == 'dark']['quarter'].unique())
+        
+        if not actual_quarters:
             return 0.0
         
-        # Compare EPS values for same quarters
+        # Compare values
         matches = 0
-        total_comparisons = 0
+        total = 0
         
-        for _, current_row in current_actual.iterrows():
-            quarter = current_row['quarter']
-            current_eps = current_row['eps']
+        for quarter in actual_quarters:
+            if quarter not in full_df_wide.columns:
+                continue
             
-            # Find same quarter in previous week's data
-            prev_row = previous_actual[previous_actual['quarter'] == quarter]
+            curr_val = str(current_row.get(quarter, ''))
+            prev_val = str(previous_row.get(quarter, ''))
             
-            if not prev_row.empty:
-                previous_eps = prev_row.iloc[0]['eps']
-                total_comparisons += 1
+            if not curr_val or '*' in curr_val or not prev_val or '*' in prev_val:
+                continue
+            
+            try:
+                curr_eps = float(curr_val.replace('*', ''))
+                prev_eps = float(prev_val.replace('*', ''))
+                total += 1
                 
-                # Check if 80% or more match (allow 5% error)
-                if abs(current_eps - previous_eps) / max(abs(previous_eps), 0.01) <= 0.2:
+                if abs(curr_eps - prev_eps) / max(abs(prev_eps), 0.01) <= 0.2:
                     matches += 1
+            except (ValueError, TypeError):
+                continue
         
-        if total_comparisons == 0:
-            return 0.0
-        
-        # Calculate consistency rate (0-100)
-        consistency = (matches / total_comparisons) * 100.0
-        
-        return consistency
+        return (matches / total * 100.0) if total > 0 else 0.0
     
-    except (ValueError, KeyError) as e:
+    except Exception as e:
         logger.warning(f"Error calculating consistency ({current_date}): {e}")
         return 0.0
 

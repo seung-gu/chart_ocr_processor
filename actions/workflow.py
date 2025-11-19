@@ -144,13 +144,13 @@ def main():
         print(f"❌ PNG extraction failed: {e}\n")
         return
     
-    # Step 4: Process images (returns DataFrame, doesn't save to file)
+    # Step 4: Process images (returns tuple of DataFrames)
     print("-" * 80)
     print(" 🔍 Step 4: Processing images and extracting data...")
     
     try:
-        df = process_images(directory=estimates_dir)
-        print(f"✅ Image processing complete: {len(df)} records\n")
+        df_main, df_confidence = process_images(directory=estimates_dir)
+        print(f"✅ Image processing complete: {len(df_main)} records\n")
     except Exception as e:
         print(f"❌ Image processing failed: {e}\n")
         return
@@ -180,13 +180,18 @@ def main():
                     uploaded_pngs += 1
     print(f"✅ Uploaded {uploaded_pngs} PNG(s) to cloud")
     
-    # Upload CSV to public bucket
+    # Upload CSVs to public bucket
     from src.factset_data_collector.utils.cloudflare import write_csv_to_cloud
     
-    if write_csv_to_cloud(df, "extracted_estimates.csv"):
+    if write_csv_to_cloud(df_main, "extracted_estimates.csv"):
         print("✅ Uploaded extracted_estimates.csv to public bucket")
     else:
-        print("⚠️  Failed to upload CSV to public bucket")
+        print("⚠️  Failed to upload extracted_estimates.csv")
+    
+    if write_csv_to_cloud(df_confidence, "extracted_estimates_confidence.csv"):
+        print("✅ Uploaded extracted_estimates_confidence.csv to public bucket")
+    else:
+        print("⚠️  Failed to upload extracted_estimates_confidence.csv")
     
     print()
     print("=" * 80)
