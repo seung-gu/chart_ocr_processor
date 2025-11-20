@@ -1,6 +1,6 @@
 [project]
 name = "eps-estimates-collector"
-version = "0.2.0"
+version = "0.2.3"
 description = "Extract quarterly EPS estimates from FactSet Earnings Insight reports using OCR"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,7 +25,7 @@ dependencies = [
     "opencv-python-headless>=4.12.0.88",
     "pandas>=2.3.3",
     "pdfplumber>=0.11.0",
-    "pillow>=12.0.0",
+    "pillow>=8.0.0",
     "python-dotenv>=1.2.1",
     "scikit-image>=0.25.2",
     "scipy>=1.16.3",

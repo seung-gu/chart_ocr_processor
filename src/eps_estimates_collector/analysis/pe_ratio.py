@@ -10,7 +10,7 @@ import tempfile
 
 import pandas as pd
 
-from src.eps_estimates_collector.utils.csv_storage import read_csv
+from ..utils.csv_storage import read_csv
 
 
 def _parse_quarter_to_date(quarter_str: str) -> datetime | None:
@@ -184,11 +184,10 @@ def calculate_pe_ratio(
     
     df_eps['Report_Date'] = pd.to_datetime(df_eps['Report_Date'])
     
-    # Determine date range from EPS data (use actual CSV date range)
+    # Determine date range from EPS data (start from min report date, end at today)
     min_date = df_eps['Report_Date'].min()
-    max_date = df_eps['Report_Date'].max()
     start_date = min_date.strftime('%Y-%m-%d')
-    end_date = max_date.strftime('%Y-%m-%d')
+    end_date = datetime.now().strftime('%Y-%m-%d')
     
     # Auto-load S&P 500 price data
     try:
