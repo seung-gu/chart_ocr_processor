@@ -1,8 +1,8 @@
 [project]
 name = "eps-estimates-collector"
-version = "0.2.3"
+version = "0.2.5"
 description = "Extract quarterly EPS estimates from FactSet Earnings Insight reports using OCR"
-readme = "README.md"
+readme = "README_PYPI.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
@@ -31,6 +31,11 @@ dependencies = [
     "scipy>=1.16.3",
     "yfinance>=0.2.66",
 ]
+
+[project.urls]
+Homepage = "https://github.com/seung-gu/eps-estimates-collector"
+Repository = "https://github.com/seung-gu/eps-estimates-collector"
+Issues = "https://github.com/seung-gu/eps-estimates-collector/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.4.0", "pytest-cov>=4.1.0"]

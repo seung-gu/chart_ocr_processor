@@ -2,6 +2,8 @@
 
 A Python package for extracting quarterly EPS (Earnings Per Share) estimates from financial reports using OCR and image processing techniques.
 
+**📦 PyPI**: [eps-estimates-collector](https://pypi.org/project/eps-estimates-collector/) | **🐙 GitHub**: [seung-gu/eps-estimates-collector](https://github.com/seung-gu/eps-estimates-collector)
+
 > **⚠️ Disclaimer**: This package is for **educational and research purposes only**. For production use, please use [FactSet's official API](https://developer.factset.com/). This package processes publicly available PDF reports and is not affiliated with or endorsed by FactSet.
 
 ## Overview
@@ -107,7 +109,7 @@ The complete workflow from PDF documents to final P/E ratio calculation:
 │  EPS Estimates + S&P 500 Prices                                     │
 │  ├─> Load EPS data from public URL                                  │
 │  ├─> Load S&P 500 prices from yfinance (2016-12-09 to today)        │
-│  ├─> Calculate 4-quarter EPS sum (forward/mix/trailing-like)        │
+│  ├─> Calculate 4-quarter EPS sum (forward: Q(1)+Q(2)+Q(3)+Q(4), etc.) │
 │  └─> Calculate P/E Ratio = Price / EPS_4Q_Sum                       │
 │                                                                     │
 │  Output: DataFrame with P/E ratios                                  │
@@ -174,9 +176,9 @@ print(pe_df)
 ```
 
 **P/E Types:**
-- `forward`: Q[1:5] - Next 4 quarters (skip current)
-- `mix`: Q[0:4] - Current + next 3 quarters
-- `trailing-like`: Q[-3:1] - Last 3 + current quarter
+- `forward`: Q(1) + Q(2) + Q(3) + Q(4) - Next 4 quarters after report date (skips current quarter)
+- `mix`: Q(0) + Q(1) + Q(2) + Q(3) - Current quarter + next 3 quarters
+- `trailing-like`: Q(-3) + Q(-2) + Q(-1) + Q(0) - Last 3 quarters before + current quarter (note: current quarter is an estimate, so this is not exact TTM)
 
 ## Architecture
 
@@ -310,9 +312,9 @@ Calculate P/E ratios from EPS estimates using S&P 500 prices.
 
 **Parameters:**
 - `type` (str): `'forward'`, `'mix'`, or `'trailing-like'`
-  - `'forward'`: Q[1:5] - Next 4 quarters after report date
-  - `'mix'`: Q[0:4] - Report date and next 3 quarters
-  - `'trailing-like'`: Q[-3:1] - Last 3 quarters before and report date
+  - `'forward'`: Q(1) + Q(2) + Q(3) + Q(4) - Next 4 quarters after report date (skips current quarter)
+  - `'mix'`: Q(0) + Q(1) + Q(2) + Q(3) - Report date quarter + next 3 quarters
+  - `'trailing-like'`: Q(-3) + Q(-2) + Q(-1) + Q(0) - Last 3 quarters before report date + report date quarter (note: report date quarter is an estimate, so this is not exact TTM)
 
 **Returns:** DataFrame with columns:
 - `Report_Date`: EPS report date

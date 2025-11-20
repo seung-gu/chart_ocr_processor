@@ -1,0 +1,185 @@
+# EPS Estimates Collector
+
+A Python package for extracting quarterly EPS (Earnings Per Share) estimates from financial reports using OCR and image processing techniques.
+
+> **⚠️ Disclaimer**: This package is for **educational and research purposes only**. For production use, please use [FactSet's official API](https://developer.factset.com/). This package processes publicly available PDF reports and is not affiliated with or endorsed by FactSet.
+
+## Overview
+
+This project processes chart images containing S&P 500 quarterly EPS data and extracts quarter labels (e.g., Q1'14, Q2'15) and corresponding EPS values. The extracted data is saved in CSV format for further analysis.
+
+### Motivation
+
+Financial data providers (FactSet, Bloomberg, Investing.com, etc.) typically offer historical EPS data as **actual values**—once a quarter's earnings are reported, the estimate is overwritten with the actual figure. This creates a challenge for backtesting predictive models: using historical data means testing against information that was already reflected in stock prices at the time, making it difficult to evaluate the true predictive power of EPS estimates.
+
+To address this, this project extracts **point-in-time EPS estimates** from historical earnings insight reports. By preserving the estimates as they appeared at each report date (before actual earnings were announced), a dataset can be built that accurately reflects what was known and expected at each point in time, enabling more meaningful backtesting and predictive analysis.
+
+## Installation
+
+Install from PyPI:
+
+```bash
+pip install eps-estimates-collector
+```
+
+Or with `uv`:
+
+```bash
+uv pip install eps-estimates-collector
+```
+
+## Workflow Overview
+
+The complete workflow from PDF documents to final P/E ratio calculation:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    📄 Step 1: PDF Download                          │
+│                                                                     │
+│  FactSet Earnings Insight Reports                                   │
+│  └─> Download PDFs from FactSet website                             │
+│      (e.g., EarningsInsight_20251114_111425.pdf)                    │
+└─────────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│              🖼️  Step 2: EPS Chart Page Extraction                  │
+│                                                                     │
+│  PDF Document                                                       │
+│  └─> Extract EPS chart page (Page 6)                                │
+│      └─> Convert to PNG image                                       │
+│          (e.g., 20161209-6.png)                                     │
+└─────────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│              🔍 Step 3: OCR Processing & Data Extraction            │
+│                                                                     │
+│  Chart Image                                                        │
+│  ├─> Google Cloud Vision API (149 text regions detected)            │
+│  ├─> Coordinate-based matching (Q1'14 ↔ 27.85)                      │
+│  ├─> Bar classification (dark = actual, light = estimate)           │
+│  └─> Extract quarter labels and EPS values                          │
+│                                                                     │
+│  Output: CSV with quarterly EPS estimates                           │
+│  └─> extracted_estimates.csv                                        │
+└─────────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│              📊 Step 4: P/E Ratio Calculation                       │
+│                                                                     │
+│  EPS Estimates + S&P 500 Prices                                     │
+│  ├─> Load EPS data from public URL                                  │
+│  ├─> Load S&P 500 prices from yfinance (2016-12-09 to today)        │
+│  ├─> Calculate 4-quarter EPS sum (e.g. forward: Q(1)+Q(2)+Q(3)+Q(4))│
+│  └─> Calculate P/E Ratio = Price / EPS_4Q_Sum                       │
+│                                                                     │
+│  Output: DataFrame with P/E ratios                                  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Visual Workflow
+
+**Step 1: PDF Document** → Downloads FactSet Earnings Insight PDF reports
+
+**Step 2: EPS Chart Page Extraction** → Extracts chart page from PDF and converts to PNG image
+
+**Step 3: OCR Processing & Bar Classification** → Extracts quarter labels and EPS values, classifies bars (dark = actual, light = estimate)
+
+**Step 4: P/E Ratio Calculation** → See example output below
+
+## Usage
+
+### Python API
+
+```python
+from eps_estimates_collector import calculate_pe_ratio
+
+# Calculate P/E ratios (auto-loads CSV and S&P 500 prices)
+pe_df = calculate_pe_ratio(type='forward')
+print(pe_df)
+```
+
+**P/E Types:**
+- `forward`: Q(1) + Q(2) + Q(3) + Q(4) - Next 4 quarters after report date (skips current quarter)
+- `mix`: Q(0) + Q(1) + Q(2) + Q(3) - Current quarter + next 3 quarters
+- `trailing-like`: Q(-3) + Q(-2) + Q(-1) + Q(0) - Last 3 quarters before + current quarter (note: current quarter is an estimate, so this is not exact TTM)
+
+### Example: P/E Ratio Calculation Result
+
+```python
+from eps_estimates_collector import calculate_pe_ratio
+
+# Calculate trailing-like P/E ratios
+pe_df = calculate_pe_ratio('trailing-like')
+print(pe_df)
+```
+
+**Output:**
+```
+📈 Loading S&P 500 price data from yfinance (2016-12-09 to 2025-11-20)...
+✅ Loaded 2249 S&P 500 price points
+
+      Report_Date  Price_Date    Price  EPS_4Q_Sum  PE_Ratio         Type
+0      2016-12-09  2016-12-09  2249.69      122.28     18.40  trailing-like
+1      2016-12-09  2016-12-12  2257.48      122.28     18.46  trailing-like
+2      2016-12-09  2016-12-13  2271.72      122.28     18.58  trailing-like
+...
+2246   2025-11-07  2025-11-13  6600.00      278.30     23.72  trailing-like
+2247   2025-11-14  2025-11-14  6700.00      278.84     24.03  trailing-like
+2248   2025-11-14  2025-11-19  6700.00      278.84     24.03  trailing-like
+
+[2249 rows x 6 columns]
+```
+
+### API Reference
+
+#### `calculate_pe_ratio(type='forward')`
+
+Calculate P/E ratios from EPS estimates using S&P 500 prices.
+
+**Parameters:**
+- `type` (str): `'forward'`, `'mix'`, or `'trailing-like'`
+  - `'forward'`: Q(1) + Q(2) + Q(3) + Q(4) - Next 4 quarters after report date (skips current quarter)
+  - `'mix'`: Q(0) + Q(1) + Q(2) + Q(3) - Report date quarter + next 3 quarters
+  - `'trailing-like'`: Q(-3) + Q(-2) + Q(-1) + Q(0) - Last 3 quarters before report date + report date quarter (note: report date quarter is an estimate, so this is not exact TTM)
+
+**Returns:** DataFrame with columns:
+- `Report_Date`: EPS report date
+- `Price_Date`: Trading day price date
+- `Price`: S&P 500 closing price
+- `EPS_4Q_Sum`: 4-quarter EPS sum
+- `PE_Ratio`: Calculated P/E ratio
+- `Type`: P/E type used
+
+**Features:**
+- ✅ No API keys required
+- ✅ Always loads latest data from public URL
+- ✅ No local files needed
+- ✅ Auto-loads S&P 500 prices from yfinance
+
+## Legal Disclaimer
+
+**This package is provided for educational and research purposes only.**
+
+- This package processes publicly available PDF reports from FactSet's website
+- The data extraction and processing methods are implemented for academic research
+- **This package is NOT affiliated with, endorsed by, or sponsored by FactSet**
+- **For production use, please use [FactSet's official API](https://developer.factset.com/)**
+
+**No Warranty**: This software is provided "as is" without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement.
+
+**Limitation of Liability**: In no event shall the authors or copyright holders be liable for any claim, damages, or other liability arising from the use of this software.
+
+**Data Usage**: Users are responsible for ensuring compliance with FactSet's terms of service and any applicable data usage agreements when using this package.
+
+## License
+
+MIT License
+
+## Links
+
+- **GitHub**: [seung-gu/eps-estimates-collector](https://github.com/seung-gu/eps-estimates-collector)
+- **PyPI**: [eps-estimates-collector](https://pypi.org/project/eps-estimates-collector/)
+

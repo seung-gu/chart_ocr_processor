@@ -396,7 +396,7 @@ wheels = [
 
 [[package]]
 name = "eps-estimates-collector"
-version = "0.2.3"
+version = "0.2.5"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },
