@@ -14,6 +14,12 @@ Financial data providers (FactSet, Bloomberg, Investing.com, etc.) typically off
 
 To address this, this project extracts **point-in-time EPS estimates** from historical earnings insight reports. By preserving the estimates as they appeared at each report date (before actual earnings were announced), a dataset can be built that accurately reflects what was known and expected at each point in time, enabling more meaningful backtesting and predictive analysis.
 
+## Current P/E Ratio Analysis (🔄 Auto-updated every Monday)
+
+The following graph shows the current S&P 500 Price with Trailing and Forward P/E Ratios, highlighting periods outside ±1.5σ range.
+
+![P/E Ratio Analysis](https://pub-62707afd3ebb422aae744c63c49d36a0.r2.dev/pe_ratio_plot.png)
+
 ## Installation
 
 Install from PyPI:

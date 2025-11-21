@@ -38,7 +38,7 @@ Example:
 from .core import download_pdfs, extract_charts, process_images, process_image
 from .analysis import fetch_sp500_pe_ratio
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 __all__ = [
     'download_pdfs',

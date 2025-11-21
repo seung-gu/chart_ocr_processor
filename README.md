@@ -24,7 +24,7 @@ Financial data providers (FactSet, Bloomberg, Investing.com, etc.) typically off
 To address this, this project extracts **point-in-time EPS estimates** from historical earnings insight reports. By preserving the estimates as they appeared at each report date (before actual earnings were announced), a dataset can be built that accurately reflects what was known and expected at each point in time, enabling more meaningful backtesting and predictive analysis.
 
 
-## Current P/E Ratio Analysis (🔄 Auto-updated every Monday)
+## P/E Ratio Analysis ([🔄 Weekly Update](https://github.com/seung-gu/eps-estimates-collector/actions/workflows/data-collection.yml) every Monday)
 
 The following graph shows the current S&P 500 Price with Trailing and Forward P/E Ratios, highlighting periods outside ±1.5σ range.
 
@@ -150,14 +150,18 @@ The complete workflow from PDF documents to final P/E ratio calculation:
 **Step 1: PDF Document** → Downloads FactSet Earnings Insight PDF reports
 
 <table style="width: 100%; table-layout: fixed; border-collapse: collapse;">
-<tr>
-<td width="50%" style="vertical-align: top; padding: 0 10px;">
-<strong>Step 2: EPS Chart Page Extraction</strong><br><br>
-<img src="output/preprocessing_test/20161209-6_original.png" alt="Original Chart" style="width: 100%; max-height: 400px; object-fit: contain; display: block; margin: 0 auto;">
+<tr style="vertical-align: top;">
+<td width="50%" style="padding: 0 10px;">
+<div style="height: 40px; line-height: 40px;"><strong>Step 2: EPS Chart Page Extraction</strong></div>
+<div style="height: 400px; display: flex; align-items: center; justify-content: center;">
+<img src="output/preprocessing_test/20161209-6_original.png" alt="Original Chart" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+</div>
 </td>
-<td width="50%" style="vertical-align: top; padding: 0 10px;">
-<strong>Step 3: OCR Processing & Bar Classification</strong><br><br>
-<img src="output/preprocessing_test/20161209-6_bar_classification.png" alt="Bar Classification" style="width: 100%; max-height: 400px; object-fit: contain; display: block; margin: 0 auto;">
+<td width="50%" style="padding: 0 10px;">
+<div style="height: 40px; line-height: 40px;"><strong>Step 3: OCR Processing & Bar Classification</strong></div>
+<div style="height: 400px; display: flex; align-items: center; justify-content: center;">
+<img src="output/preprocessing_test/20161209-6_bar_classification.png" alt="Bar Classification" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+</div>
 <small><em>Dark bars = Actual values, Light bars = Estimates</em></small>
 </td>
 </tr>
@@ -389,6 +393,9 @@ R2_SECRET_ACCESS_KEY
 
 ## Recent Updates
 
+### v0.3.2 (2025-11-21) - Minor fixes
+- ✅ **PyPI README update**: Added Current P/E Ratio Analysis section with auto-updated graph
+
 ### v0.3.1 (2025-11-20) - Fix matplotlib dependency
 - ✅ **Add matplotlib dependency**: Required for P/E ratio graph generation
 
@@ -441,6 +448,12 @@ R2_SECRET_ACCESS_KEY
 - **Confidence Score**: Bar classification (0.5) + consistency (0.5)
 
 See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for detailed technical documentation.
+
+## TODO / Future Enhancements
+
+- [ ] **Report Analysis Summary API**: Generate automated summaries and insights from earnings reports
+- [ ] **Sector-specific EPS & P/E Ratio API**: Provide EPS and P/E ratio analysis by industry sectors
+- [ ] **Push notification on workflow success/failure**: Send alerts via push app when weekly auto-update succeeds or fails
 
 ## Legal Disclaimer
 

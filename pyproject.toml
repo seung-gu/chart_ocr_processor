@@ -1,6 +1,6 @@
 [project]
 name = "eps-estimates-collector"
-version = "0.3.1"
+version = "0.3.2"
 description = "Extract quarterly EPS estimates from FactSet Earnings Insight reports using OCR"
 readme = "README_PYPI.md"
 requires-python = ">=3.11"
