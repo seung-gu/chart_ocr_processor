@@ -1,8 +1,15 @@
 # EPS Estimates Collector
 
+[![Weekly Update](https://github.com/seung-gu/eps-estimates-collector/actions/workflows/data-collection.yml/badge.svg)](https://github.com/seung-gu/eps-estimates-collector/actions/workflows/data-collection.yml)
+[![PyPI version](https://img.shields.io/pypi/v/eps-estimates-collector.svg)](https://pypi.org/project/eps-estimates-collector/)
+[![Python 3.11+](https://img.shields.io/pypi/pyversions/eps-estimates-collector.svg)](https://pypi.org/project/eps-estimates-collector/)
+[![License: MIT](https://img.shields.io/pypi/l/eps-estimates-collector.svg)](https://github.com/seung-gu/eps-estimates-collector/blob/main/LICENSE)
+
 A Python package for extracting quarterly EPS (Earnings Per Share) estimates from financial reports using OCR and image processing techniques.
 
-**📦 PyPI**: [eps-estimates-collector](https://pypi.org/project/eps-estimates-collector/) | **🐙 GitHub**: [seung-gu/eps-estimates-collector](https://github.com/seung-gu/eps-estimates-collector)
+**📦 PyPI**: [eps-estimates-collector](https://pypi.org/project/eps-estimates-collector/) 
+
+**🐙 GitHub**: [seung-gu/eps-estimates-collector](https://github.com/seung-gu/eps-estimates-collector)
 
 > **⚠️ Disclaimer**: This package is for **educational and research purposes only**. For production use, please use [FactSet's official API](https://developer.factset.com/). This package processes publicly available PDF reports and is not affiliated with or endorsed by FactSet.
 
@@ -17,7 +24,7 @@ Financial data providers (FactSet, Bloomberg, Investing.com, etc.) typically off
 To address this, this project extracts **point-in-time EPS estimates** from historical earnings insight reports. By preserving the estimates as they appeared at each report date (before actual earnings were announced), a dataset can be built that accurately reflects what was known and expected at each point in time, enabling more meaningful backtesting and predictive analysis.
 
 
-## Current P/E Ratio Analysis
+## Current P/E Ratio Analysis (🔄 Auto-updated every Monday)
 
 The following graph shows the current S&P 500 Price with Trailing and Forward P/E Ratios, highlighting periods outside ±1.5σ range.
 
@@ -142,16 +149,15 @@ The complete workflow from PDF documents to final P/E ratio calculation:
 
 **Step 1: PDF Document** → Downloads FactSet Earnings Insight PDF reports
 
-<table style="width: 100%; table-layout: fixed;">
+<table style="width: 100%; table-layout: fixed; border-collapse: collapse;">
 <tr>
-<td width="50%" style="vertical-align: top;">
-<strong>Step 2: EPS Chart Page Extraction</strong><br>
-<img src="output/preprocessing_test/20161209-6_original.png" alt="Original Chart" style="width: 100%; max-height: 400px; object-fit: contain; display: block;">
-<small><em></em></small>
+<td width="50%" style="vertical-align: top; padding: 0 10px;">
+<strong>Step 2: EPS Chart Page Extraction</strong><br><br>
+<img src="output/preprocessing_test/20161209-6_original.png" alt="Original Chart" style="width: 100%; max-height: 400px; object-fit: contain; display: block; margin: 0 auto;">
 </td>
-<td width="50%" style="vertical-align: top;">
-<strong>Step 3: OCR Processing & Bar Classification</strong><br>
-<img src="output/preprocessing_test/20161209-6_bar_classification.png" alt="Bar Classification" style="width: 100%; max-height: 400px; object-fit: contain; display: block;">
+<td width="50%" style="vertical-align: top; padding: 0 10px;">
+<strong>Step 3: OCR Processing & Bar Classification</strong><br><br>
+<img src="output/preprocessing_test/20161209-6_bar_classification.png" alt="Bar Classification" style="width: 100%; max-height: 400px; object-fit: contain; display: block; margin: 0 auto;">
 <small><em>Dark bars = Actual values, Light bars = Estimates</em></small>
 </td>
 </tr>

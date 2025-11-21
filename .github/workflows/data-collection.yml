@@ -1,4 +1,4 @@
-name: EPS Estimates Collection
+name: Weekly Update
 
 on:
   schedule:
