@@ -1,6 +1,6 @@
 [project]
 name = "factset-report-analyzer"
-version = "0.4.0"
+version = "0.4.1"
 description = "Extract quarterly EPS estimates from FactSet Earnings Insight reports using OCR and calculate S&P 500 P/E ratios"
 readme = "README_PYPI.md"
 requires-python = ">=3.11"
@@ -39,7 +39,7 @@ Repository = "https://github.com/seung-gu/factset-report-analyzer"
 Issues = "https://github.com/seung-gu/factset-report-analyzer/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4.0", "pytest-cov>=4.1.0"]
+dev = ["pytest>=9.0.1", "pytest-cov>=7.0.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/factset_report_analyzer"]
@@ -50,6 +50,8 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "pytest>=9.0.1",
+    "pytest-cov>=7.0.0",
     "twine>=6.2.0",
 ]
 

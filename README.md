@@ -422,6 +422,12 @@ R2_SECRET_ACCESS_KEY
 
 ## Recent Updates
 
+### v0.4.1 (2025-11-21) - Bug Fixes
+- ✅ **Test Suite Fixes**: Updated test imports to use new `SP500` class instead of deprecated `calculate_pe_ratio` function
+- ✅ **Test Improvements**: Fixed Google credentials path checking and workflow step name validation
+- ✅ **Dependencies**: Added pytest and pytest-cov to dev dependencies for proper test execution
+- ✅ **Cleanup**: Removed outdated test file (`test_quarter_eps_sum.py`) that referenced deprecated functions
+
 ### v0.4.0 (2025-11-21) - Package Rename & Refactoring
 - ✅ **Package Rename**: `eps-estimates-collector` → `factset-report-analyzer` - clearer naming reflecting FactSet report analysis focus
 - ✅ **Module Rename**: `analysis/pe_ratio.py` → `analysis/sp500.py` - better organization

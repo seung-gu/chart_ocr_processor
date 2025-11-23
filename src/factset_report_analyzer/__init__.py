@@ -37,7 +37,7 @@ Example:
 from .core import download_pdfs, extract_charts, process_images, process_image
 from .analysis import SP500, plot_pe_ratio_with_price
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 __all__ = [
     'download_pdfs',
